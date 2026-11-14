@@ -41,11 +41,9 @@ env = { DISTA_WORKER_SLOTS = "1" }
 memory_gb = "auto"
 # Without the dev stack's GITHUB_TOKEN_FILE its runs fail on the secret.
 secrets = { GITHUB_TOKEN = "orca/github-token" }
-# As in morca.toml: the search backfill's fill runs, a month a run, one at a
-# time, 02:00-08:00 UTC, after the other pipelines.
+# As in morca.toml, a month a run after the other pipelines; without fill_*
+# (CI keeps them out of this file) the search fill runs one at a time, all day.
 keys_per_run = 31
-fill_max_runs = 1
-fill_window = "2..8"
 priority = -10
 
 [pipelines.mojo_history]

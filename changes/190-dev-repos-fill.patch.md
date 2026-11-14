@@ -1,1 +1,1 @@
-- **Beta: the mojo_repos search fill runs as on production**, a month a run overnight. (#190)
+- **Beta: the mojo_repos search fill runs a month a run**, after the other pipelines. (#190)
