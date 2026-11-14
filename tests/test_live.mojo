@@ -5,16 +5,22 @@ from std.time import perf_counter_ns
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.catalog.filesystem import FilesystemCatalog
 from iceberg.schema import Schema
+from iceberg.types import P_TIMESTAMPTZ
 from iceberg.values import Datum
 from morca.civil import now
 
 from console_live import live_json, live_page, read_live
-from lake import LIVE_COMMITS_SCHEMA, ts
+from lake import LIVE_COMMITS_SCHEMA
 
 from live import (
     Asked, LiveCommit, ask_heads, freshness, heads_query, history_query, new_since, parse_heads,
     parse_history,
 )
+
+
+def ts(micros: Int64) -> Datum:
+    """A `timestamptz` value, for iceberg's builders."""
+    return Datum.integral(P_TIMESTAMPTZ, micros)
 
 
 def test_heads_query() raises:

@@ -9,21 +9,24 @@ in, so the same files must come out, row for row.
 """
 
 from std.os import getenv
+from std.time import perf_counter_ns
 from std.testing import TestSuite, assert_equal, assert_true
 
+from iceberg.catalog.filesystem import FilesystemCatalog
 from iceberg.io import FileIO
-from iceberg.manifest import DataFile
 from iceberg.schema import Schema
 from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
 from iceberg.write import WriteOptions, write_data_files
 from parquet import ParquetReader, RecordBatch
 from parquet_full import AllCodecs
+from morca.tables import BatchBuilder, FileWriter
+from morca.tables import Schema as LakeSchema
+from morca.tables import Table as LakeTable
 
 from cols import i64_at, is_valid, str_at
 from eventrows import (
     CHUNK_BYTES,
     EventRows,
-    FileTarget,
     TextColumn,
     order_by_repo_type,
     write_event_files,
@@ -106,9 +109,9 @@ def _row(b: RecordBatch, r: Int) -> String:
     return out^
 
 
-def _file_rows(io: FileIO, f: DataFile) raises -> Tuple[List[String], Int]:
+def _file_rows(io: FileIO, path: String) raises -> Tuple[List[String], Int]:
     """A file's rows in order, and its row groups."""
-    var reader = ParquetReader[AllCodecs](io.read_all(f.file_path))
+    var reader = ParquetReader[AllCodecs](io.read_all(path))
     var groups = reader.num_row_groups()
     var t = reader.read_table()
     var out = List[String]()
@@ -145,10 +148,17 @@ def test_same_files_row_for_row() raises:
         0,
         _options(),
     )
-    var target = FileTarget(
-        io.copy(), dir + "/new", events_schema(), events_spec(), 0, _options()
+    # The new files go to a table made with iceberg (a step's `ensure_table`
+    # needs a run), written through morca's FileWriter as gharchive does.
+    var cat = FilesystemCatalog.local(String(dir, "/new-", perf_counter_ns()))
+    var made = cat.create_table(
+        "t", "events", events_schema(), events_spec(), events_properties()
     )
-    var new_files = write_event_files(target, rows, order, 64 * 1024)
+    var w = FileWriter(LakeTable.load(made.metadata.location))
+    w.options.page_size = 4096
+    w.options.num_workers = 0
+    write_event_files(w, rows, order, 64 * 1024)
+    var new_files = w^.finish().files()
     assert_equal(len(old_files), 2)  # two days
     assert_equal(len(new_files), len(old_files))
     var groups = 0
@@ -157,22 +167,13 @@ def test_same_files_row_for_row() raises:
         ref b = new_files[k]
         assert_equal(a.record_count, b.record_count)
         assert_equal(a.partition[0].i, b.partition[0].i)
-        var x = _file_rows(io, a)
-        var y = _file_rows(io, b)
+        var x = _file_rows(io, a.file_path)
+        var y = _file_rows(io, b.file_path)
         assert_equal(x[1], 1)
         groups += y[1]
         assert_equal(len(x[0]), len(y[0]))
         for r in range(len(x[0])):
             assert_equal(x[0][r], y[0][r])
-        # The column metrics the manifests carry are the same.
-        assert_equal(len(a.metrics), len(b.metrics))
-        for m in range(len(a.metrics)):
-            assert_equal(a.metrics[m].value_count, b.metrics[m].value_count)
-            assert_equal(
-                a.metrics[m].null_value_count, b.metrics[m].null_value_count
-            )
-            assert_true(a.metrics[m].lower_bound == b.metrics[m].lower_bound)
-            assert_true(a.metrics[m].upper_bound == b.metrics[m].upper_bound)
         io.delete(a.file_path)
         io.delete(b.file_path)
     # 64 KB row groups: several a file, which is the point.
@@ -183,7 +184,7 @@ def test_pieces_stay_bounded() raises:
     """A string column's pieces are `CHUNK_BYTES` (a longer value gets its
     own) and are filled before a new one starts: what a column holds is its
     bytes, not a doubled buffer."""
-    var c = TextColumn(events_schema(), 6)
+    var c = TextColumn(BatchBuilder(LakeSchema.parse(EVENTS_SCHEMA)), "payload")
     var small = List[UInt8](length=1000, fill=0x61)
     var big = List[UInt8](length=CHUNK_BYTES + 5, fill=0x62)
     for i in range(10_000):

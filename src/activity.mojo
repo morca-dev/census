@@ -12,7 +12,6 @@ counting (`hourindex.HourIndex.add` does the same per hour, and
 from std.time import perf_counter_ns
 
 from dista import Seq
-from iceberg.json import json_quote
 from morca.tables import BatchBuilder, load_dataset
 from parquet import RecordBatch
 
@@ -25,6 +24,7 @@ from lake import (
     activity_schema,
     add_str_or_null,
     add_ts_or_null,
+    json_quote,
     releases_schema,
 )
 

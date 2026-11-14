@@ -15,18 +15,21 @@ writer, its zstd contexts, and the allocator's slack.
 """
 
 from std.os import getenv
+from std.time import perf_counter_ns
 from std.testing import TestSuite, assert_equal, assert_true
 
 from deflate import gzip
+from iceberg.catalog.filesystem import FilesystemCatalog
 from iceberg.io import FileIO
-from iceberg.write import WriteOptions
+from iceberg.schema import Schema
+from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
+from morca.tables import Table
 
 from datafiles import TableWriter
-from eventrows import FileTarget
 from events import ROWS_PER_BATCH, decode_index
 from gzstream import Whole
 from hourindex import HourIndex
-from lake import events_properties, events_schema, events_spec
+from lake import EVENTS_SCHEMA, events_properties
 from rss import peak_rss_bytes
 
 comptime ROWS = 60_000
@@ -82,16 +85,27 @@ def test_an_hour_holds_about_one_file() raises:
     var made = _hour()
     ref gz = made[0]
     var file_json = made[1]
-    var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-hourmemory")
+    var dir = String(
+        getenv("TMPDIR", "/tmp"), "/census-test-hourmemory-", perf_counter_ns()
+    )
     var io = FileIO.local()
-    var opts = WriteOptions.from_properties(events_properties())
-    opts.page_size = 4 * MB
+    # The events table, made with iceberg (a step's `ensure_table` needs a
+    # run) and written through morca's tables; 4 MB pages, TableWriter's
+    # default without the table property.
+    var events = FilesystemCatalog.local(dir).create_table(
+        "gharchive",
+        "events",
+        Schema.parse(EVENTS_SCHEMA),
+        PartitionSpec(
+            0,
+            [PartitionField.single(3, 1000, "created_day", parse_transform("day"))],
+        ),
+        events_properties(),
+    )
+    var w = TableWriter(Table.load(events.metadata.location))
     # Two encoding threads, as on a 4-vCPU server at two hours in flight:
     # each holds a zstd 9 context, so the figure doesn't depend on the cores.
-    opts.num_workers = 2
-    var w = TableWriter(
-        FileTarget(io.copy(), dir, events_schema(), events_spec(), 0, opts^)
-    )
+    w.writer.options.num_workers = 2
     var before = peak_rss_bytes()
     var index = HourIndex()
     _ = decode_index(Whole(Span(gz)), w, index, True)
@@ -100,7 +114,7 @@ def test_an_hour_holds_about_one_file() raises:
     var out = w^.finish()
     assert_equal(out.rows, ROWS)
     assert_equal(len(out.files), 2)
-    for ref f in out.files.files:
+    for f in out.files.files():
         io.delete(f.file_path)
     print(
         "hour of",

@@ -8,11 +8,16 @@ table counts its own commits (`morca.tables.find_commit`), so a retried step
 finds, per table, what it already committed.
 """
 
-from iceberg.catalog.filesystem import Table
-from iceberg.commit import FileChanges
-from iceberg.manifest import DataFile
 from morca import Ctx
-from morca.tables import append, append_files, commit, find_commit
+from morca.tables import (
+    DataFiles,
+    FileChanges,
+    Table,
+    append,
+    append_files,
+    commit,
+    find_commit,
+)
 from parquet import RecordBatch
 
 from days import day_text, days_of
@@ -59,7 +64,7 @@ def commit_hour(
     i: Int,
     done: Int,
     old: List[String],
-    files: List[DataFile],
+    files: DataFiles,
 ) raises -> Int64:
     """Hour `i`'s files as `t`'s next snapshot: found again if an earlier
     attempt made it (`i < done`), an `overwrite` that also removes `old` if
@@ -83,7 +88,7 @@ def commit_day(
     mut t: Table,
     day: String,
     column: String,
-    files: List[DataFile],
+    files: DataFiles,
 ) raises -> Int64:
     """All of the day's `files` as `t`'s one commit of the step: found again
     if an earlier attempt made it (it is the step's commit number 0 to `t`,

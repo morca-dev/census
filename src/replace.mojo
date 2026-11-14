@@ -13,11 +13,10 @@ commits would both keep the other's rows (morca-dev/morca#120, morca's
 replace mode, and magmalake/iceberg.mojo#83).
 """
 
-from iceberg.catalog.filesystem import Table as IcebergTable
-from iceberg.scan import FileScanTask
 from morca import Ctx
 from morca.tables import (
     FileChanges,
+    FileScanTask,
     Table,
     append,
     commit,
@@ -40,7 +39,7 @@ struct PartitionFiles(Copyable, Movable):
 
 
 def partition_files(
-    t: IcebergTable, partitions: Dict[Int, Bool], filter: String = '["true"]'
+    t: Table, partitions: Dict[Int, Bool], filter: String = '["true"]'
 ) raises -> PartitionFiles:
     """The current snapshot's data files whose first partition value is one
     of `partitions`, and how many rows they hold. `filter`, a row filter the
@@ -64,7 +63,7 @@ def partition_files(
 
 
 def read_partition_files(
-    t: IcebergTable, files: PartitionFiles, filter: String = '["true"]'
+    t: Table, files: PartitionFiles, filter: String = '["true"]'
 ) raises -> List[RecordBatch]:
     """The rows of the files `partition_files` found, read from its planned
     tasks: only those files, without planning the table again. `filter` is

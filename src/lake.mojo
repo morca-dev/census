@@ -1,18 +1,16 @@
 """The lake's tables, shared by the pipelines and the console."""
 
-from std.os import getenv
+from std.os import getenv, setenv
 
-from iceberg.catalog.filesystem import FilesystemCatalog, Table
-from iceberg.io import FileIO
-from iceberg.json import json_quote
-from iceberg.types import P_DATE, P_TIMESTAMPTZ
-from iceberg.values import Datum
 from morca.tables import (
     BatchBuilder,
     PartitionField,
     PartitionSpec,
     Schema,
+    Table,
+    load_dataset,
     parse_transform,
+    table_exists,
 )
 
 comptime EVENTS = "gharchive.events"
@@ -550,37 +548,41 @@ def migrations_schema() raises -> Schema:
     return Schema.parse(MIGRATIONS_SCHEMA)
 
 
-def ts(micros: Int64) -> Datum:
-    """A `timestamptz` value."""
-    return Datum.integral(P_TIMESTAMPTZ, micros)
-
-
-def date(days: Int64) -> Datum:
-    """A `date` value: days since 1970-01-01."""
-    return Datum.integral(P_DATE, days)
-
-
-def ts_or_null(micros: Int64) -> Datum:
-    if micros == 0:
-        return Datum.none()
-    return ts(micros)
-
-
-def json_strings(items: List[String]) -> String:
-    """A `list<string>` cell for `NestedBuilder.add`."""
-    var out = String("[")
-    for i in range(len(items)):
-        if i > 0:
-            out += ","
-        out += json_quote(items[i])
-    out += "]"
+def json_quote(s: String) -> String:
+    """`s` as a quoted, escaped JSON string."""
+    comptime HEX = "0123456789abcdef"
+    var out = String('"')
+    var b = s.as_bytes()
+    var start = 0
+    for k in range(len(b)):
+        var c = b[k]
+        var esc: String
+        if c == 0x22:
+            esc = '\\"'
+        elif c == 0x5C:
+            esc = "\\\\"
+        elif c == 0x0A:
+            esc = "\\n"
+        elif c == 0x0D:
+            esc = "\\r"
+        elif c == 0x09:
+            esc = "\\t"
+        elif c == 0x08:
+            esc = "\\b"
+        elif c == 0x0C:
+            esc = "\\f"
+        elif c < 0x20:
+            esc = String(
+                "\\u00", HEX[byte = Int(c >> 4)], HEX[byte = Int(c & 0xF)]
+            )
+        else:
+            continue
+        out += StringSlice(unsafe_from_utf8=Span(b)[start:k])
+        out += esc
+        start = k + 1
+    out += StringSlice(unsafe_from_utf8=Span(b)[start : len(b)])
+    out += '"'
     return out^
-
-
-def str_or_null(s: String) -> Datum:
-    if s.byte_length() == 0:
-        return Datum.none()
-    return Datum.string_(s)
 
 
 def add_ts_or_null(mut b: BatchBuilder, c: Int, micros: Int64) raises:
@@ -614,22 +616,21 @@ def warehouse() -> String:
     return getenv("MORCA_WAREHOUSE", "build/warehouse")
 
 
+def _dataset(namespace: String, name: String) -> String:
+    """The dataset name, for `load_dataset` and `table_exists`, with
+    `MORCA_WAREHOUSE` set to `warehouse()` if it isn't (the console and the
+    tools run without morca, on the local default)."""
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", warehouse())
+    return String(namespace, ".", name)
+
+
 def load(namespace: String, name: String) raises -> Table:
-    var root = warehouse()
-    if "://" in root and not root.startswith("file://"):
-        return FilesystemCatalog(String(root.rstrip("/")), FileIO()).load_table(
-            namespace, name
-        )
-    return FilesystemCatalog.local(root).load_table(namespace, name)
+    return load_dataset(_dataset(namespace, name))
 
 
 def exists(namespace: String, name: String) raises -> Bool:
-    var root = warehouse()
-    if "://" in root and not root.startswith("file://"):
-        return FilesystemCatalog(
-            String(root.rstrip("/")), FileIO()
-        ).table_exists(namespace, name)
-    return FilesystemCatalog.local(root).table_exists(namespace, name)
+    return table_exists(_dataset(namespace, name))
 
 
 def try_load(namespace: String, name: String) raises -> Optional[Table]:
