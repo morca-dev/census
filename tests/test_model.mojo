@@ -10,7 +10,8 @@ from std.subprocess import run
 from std.testing import TestSuite, assert_equal, assert_true
 from std.time import perf_counter_ns
 
-from iceberg.batch import ColumnBuilder, batch_of
+from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
+from iceberg.nested import ColumnTree
 from iceberg.catalog.filesystem import FilesystemCatalog, Table
 from iceberg.schema import Schema
 from iceberg.values import Datum
@@ -20,6 +21,9 @@ from deps import Dep, RepoDep
 from historyrows import repo_deps_batch
 from lake import (
     commits_schema,
+    date,
+    json_strings,
+    repo_stats_schema,
     repo_deps_schema,
     repo_versions_schema,
     str_or_null,
@@ -395,6 +399,103 @@ def test_stored_from_the_snapshot_summaries() raises:
     assert_equal(stored_total(all, "mojo.").bytes, 47)
     assert_equal(stored_total(all, "mojo.commits").records, 5)
     assert_equal(stored_total(List[Stored](), "mojo.").records, 0)
+    _ = run(String("rm -rf '", dir, "'"))
+
+
+def _stats(rows: List[Tuple[String, String, String, String, Int]]) raises -> List[ColumnTree]:
+    """mojo.repo_stats rows: (repo, day, state, renamed_to, repo_id), with
+    numbers and a description naming the day."""
+    var s = repo_stats_schema()
+    var cs = List[ColumnBuilder]()
+    for id in [1, 2, 3, 4, 5, 6, 7, 8]:
+        cs.append(ColumnBuilder.of(s, id))
+    var topics = NestedBuilder.of(s, 9)
+    var rest = List[ColumnBuilder]()
+    for id in [11, 12, 13, 14, 15, 16, 17, 18, 19]:
+        rest.append(ColumnBuilder.of(s, id))
+    for r in rows:
+        cs[0].add(Datum.string_(r[0]))
+        cs[1].add(date(days_of(r[1])))
+        cs[2].add(ts(_us(r[1])))
+        cs[3].add(Datum.string_(r[2]))
+        for i in range(4, 8):
+            cs[i].add(Datum.long_(7))
+        topics.add(json_strings(["mojo"]))
+        rest[0].add(Datum.bool_(False))
+        rest[1].add(Datum.none())
+        rest[2].add(Datum.none())
+        rest[3].add(Datum.none())
+        rest[4].add(Datum.string_(String("as of ", r[1])))
+        rest[5].add(Datum.long_(1))
+        rest[6].add(Datum.none())
+        rest[7].add(str_or_null(r[3]))
+        rest[8].add(Datum.long_(Int64(r[4])) if r[4] > 0 else Datum.none())
+    var trees = List[ColumnTree]()
+    for ref c in cs:
+        trees.append(c.build_tree())
+    trees.append(topics.build())
+    for ref c in rest:
+        trees.append(c.build_tree())
+    return trees^
+
+
+def test_renamed_repo_is_shown_under_its_current_name() raises:
+    """The repo o/orca.mojo was renamed, then transferred to neworg/morca (#181);
+    a run before the fix also added it again under the new name. One
+    library, named as it is now, with the old names as aliases, the commits
+    of its first key counted once, and a dependency on its old URL
+    resolved to it."""
+    var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-renamed-", perf_counter_ns())
+    var cat = FilesystemCatalog.local(dir)
+    var repos_t = cat.create_table("mojo", "repos", Schema.parse(REPOS_NO_TOPICS))
+    var commits_t = cat.create_table("mojo", "commits", commits_schema())
+    var stats_t = cat.create_table("mojo", "repo_stats", repo_stats_schema())
+    var deps_t = cat.create_table("mojo", "repo_deps", repo_deps_schema())
+    var first: List[String] = ["o/orca.mojo", "o/user"]
+    _ = repos_t.append([batch_of(_repos(first, "2025-01-01", "found"))])
+    var dup: List[String] = ["neworg/morca"]
+    _ = repos_t.append([batch_of(_repos(dup, "2026-11-12", "found again"))])
+    var cs = commits_schema()
+    var c = List[ColumnBuilder]()
+    for i in range(9):
+        c.append(ColumnBuilder.of(cs, i + 1))
+    _commit(c, "o/orca.mojo", "2026-10-20", 0, 40)
+    _commit(c, "o/orca.mojo", "2026-10-25", 1, 80)
+    _commit(c, "neworg/morca", "2026-10-20", 0, 40)  # the duplicate's clone
+    _commit(c, "o/user", "2026-10-20", 0, 5)
+    _ = commits_t.append([batch_of(c)])
+    var rows: List[Tuple[String, String, String, String, Int]] = [
+        ("o/orca.mojo", "2026-11-08", "ok", "", 0),
+        ("o/orca.mojo", "2026-11-09", "renamed", "o/orca", 42),
+        ("o/orca.mojo", "2026-11-12", "renamed", "neworg/morca", 42),
+        ("neworg/morca", "2026-11-12", "ok", "", 42),
+        ("o/user", "2026-11-12", "ok", "", 43),
+    ]
+    _ = stats_t.append([batch_of_columns(_stats(rows))])
+    var at = _us("2026-11-05")
+    var drows: List[RepoDep] = [
+        RepoDep("o/user", at, Dep("depends", "git", "orca", "o/orca.mojo", "dependencies", "pixi.toml")),
+    ]
+    _ = deps_t.append([repo_deps_batch(drows)])
+
+    _ = setenv("MORCA_WAREHOUSE", dir)
+    var b = Builder(Int(days_of("2026-11-12")))
+    var libs = libraries(b)
+    assert_equal(len(libs), 2)
+    # Not a duplicate for the data checks: two names, two rows.
+    assert_equal(b.repo_rows, 2)
+    ref l = libs[0]
+    assert_equal(l.repo, "neworg/morca")
+    assert_equal(l.key, "o/orca.mojo")
+    assert_equal(len(l.aliases), 2)
+    assert_equal(l.aliases[0], "o/orca")
+    assert_equal(l.aliases[1], "o/orca.mojo")
+    assert_equal(l.commits, 2)
+    assert_equal(l.mojo_lines, 80)
+    assert_equal(l.description, "as of 2026-11-12")
+    assert_equal(len(l.used_by), 1)
+    assert_equal(l.used_by[0], "o/user")
+    assert_equal(libs[1].depends_on[0], "neworg/morca")
     _ = run(String("rm -rf '", dir, "'"))
 
 

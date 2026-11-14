@@ -20,6 +20,8 @@ from model import (
     activity_months,
     histories,
     libraries,
+    merge_months,
+    merge_releases,
     migrations,
     gains_since,
     releases_all,
@@ -75,6 +77,12 @@ struct RepoData(Copyable, Movable):
         self.acts = List[MonthActivity]()
         self.issues = RepoIssues()
         self.contributors = RepoContributors.empty()
+
+
+def _duplicate(key: String, key_of: Dict[String, String], name_of: Dict[String, String]) -> Bool:
+    """Whether rows keyed `key` are a duplicate's: a name of a repo whose
+    rows are under another key (`Library.key`), so they're left out."""
+    return key not in key_of and key.lower() in name_of
 
 
 struct Cache(Movable):
@@ -151,6 +159,9 @@ struct Cache(Movable):
     var categories: List[String]
     """Each repo's category key (`categories.categorize`), in `libs`' order;
     "" for one not embedded yet."""
+    var moved: Dict[String, String]
+    """A renamed or transferred repo's old names, lowercased, to its
+    current name, for the redirects from its old pages (#181)."""
 
     def __init__(out self):
         self.ready = False
@@ -193,6 +204,7 @@ struct Cache(Movable):
         self.embed_snapshot = -1
         self.emb = Embeddings()
         self.categories = List[String]()
+        self.moved = Dict[String, String]()
 
     def _build(mut self, today: Int, var src: Sources) raises:
         var b = Builder(today)
@@ -206,7 +218,26 @@ struct Cache(Movable):
         var recent = b.recent(names)
         var commits30 = recent.commits30.copy()
         var lines_delta = recent.lines_delta.copy()
-        var gains = gains_since(today - 30)
+        # The tables are keyed by the name a repo was found under (`key`),
+        # and the ones from GH Archive's events by the name it had on each
+        # day: both to the current name (#181). What its kept row's key has
+        # comes from that key only (another key of the same repo is a
+        # duplicate row, read again); the events of every name add up.
+        var key_of = Dict[String, String]()
+        var name_of = Dict[String, String]()
+        var moved = Dict[String, String]()
+        for ref l in libs:
+            key_of[l.key] = l.repo
+            name_of[l.repo.lower()] = l.repo
+            for ref a in l.aliases:
+                name_of[a.lower()] = l.repo
+                if a.lower() != l.repo.lower():
+                    moved[a.lower()] = l.repo
+        var gains = Dict[String, Gain]()
+        for e in gains_since(today - 30).items():
+            var cur = name_of.get(e.key.lower(), e.key)
+            var g = gains.get(cur, Gain(0, 0))
+            gains[cur] = Gain(g.stars + e.value.stars, g.forks + e.value.forks)
         var cutoff = Int64(today - ACTIVE_DAYS) * 86_400_000_000
         var lines = List[Int64]()
         var files = List[Int64]()
@@ -270,32 +301,52 @@ struct Cache(Movable):
         self.depended = most_depended(names, users, stars, forks, DEPENDED_SHOWN)
         var details = Dict[String, RepoData]()
         for e in histories().items():
-            details[e.key] = RepoData()
-            details[e.key].pts = e.value.copy()
+            if _duplicate(e.key, key_of, name_of):
+                continue
+            var cur = key_of.get(e.key, e.key)
+            details[cur] = RepoData()
+            details[cur].pts = e.value.copy()
         var all_ms = migrations()
-        var rows = versions_of(all_ms)
+        var kept_ms = List[Migration]()
         for ref m in all_ms:
+            if _duplicate(m.repo, key_of, name_of):
+                continue
+            var mm = m.copy()
+            mm.repo = key_of.get(m.repo, m.repo)
+            kept_ms.append(mm^)
+        var rows = versions_of(kept_ms)
+        for ref m in kept_ms:
             if m.repo not in details:
                 details[m.repo] = RepoData()
             details[m.repo].ms.append(m.copy())
         for e in releases_all().items():
-            if e.key not in details:
-                details[e.key] = RepoData()
-            details[e.key].rels = e.value.copy()
+            var cur = name_of.get(e.key.lower(), e.key)
+            if cur not in details:
+                details[cur] = RepoData()
+            var prev = details[cur].rels.copy()
+            details[cur].rels = merge_releases(prev, e.value)
         for e in activity_all().items():
-            if e.key not in details:
-                details[e.key] = RepoData()
-            details[e.key].acts = e.value.copy()
+            var cur = name_of.get(e.key.lower(), e.key)
+            if cur not in details:
+                details[cur] = RepoData()
+            var prev = details[cur].acts.copy()
+            details[cur].acts = merge_months(prev, e.value)
         var issue_rows = read_issue_rows()
         add_issue_months(ov, issue_rows)
         for e in summarize(issue_rows).items():
-            if e.key not in details:
-                details[e.key] = RepoData()
-            details[e.key].issues = e.value.copy()
+            if _duplicate(e.key, key_of, name_of):
+                continue
+            var cur = key_of.get(e.key, e.key)
+            if cur not in details:
+                details[cur] = RepoData()
+            details[cur].issues = e.value.copy()
         for e in read_contributors().items():
-            if e.key not in details:
-                details[e.key] = RepoData()
-            details[e.key].contributors = e.value.copy()
+            if _duplicate(e.key, key_of, name_of):
+                continue
+            var cur = key_of.get(e.key, e.key)
+            if cur not in details:
+                details[cur] = RepoData()
+            details[cur].contributors = e.value.copy()
         self.loaded = activity_months()
         self.migrations_body = _migrations_body(rows) if len(rows) > 0 else String()
         self.version_rows = rows^
@@ -326,6 +377,11 @@ struct Cache(Movable):
         for ref n in names:
             keep[n] = True
         var emb = read_embeddings()
+        for i in range(len(emb.repos)):
+            if emb.repos[i] in key_of:
+                emb.repos[i] = key_of[emb.repos[i]]
+            elif _duplicate(emb.repos[i], key_of, name_of):
+                emb.repos[i] = String()  # matches no repo
         self.similar = nearest(emb, keep)
         var cats = categorize(emb)
         self.categories = List[String]()
@@ -335,6 +391,7 @@ struct Cache(Movable):
         self.embed_rev = emb.model_rev
         self.embed_snapshot = emb.snapshot
         self.emb = emb^
+        self.moved = moved^
         self.repo_rows = b.repo_rows
         self.sources = src^
         self.built_day = today
@@ -348,6 +405,10 @@ struct Cache(Movable):
             if self.libs[i].repo == repo:
                 return self.categories[i] if i < len(self.categories) else String()
         return String()
+
+    def moved_to(self, repo: String) -> String:
+        """The current name of a repo `repo` is an old name of, or ""."""
+        return self.moved.get(repo.lower(), String())
 
     def find(self, repo: String) -> Optional[Library]:
         for ref l in self.libs:

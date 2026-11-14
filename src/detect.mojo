@@ -233,6 +233,8 @@ struct RepoInfo(Copyable, Movable):
     var language: String
     var fork: Bool
     var topics: List[String]
+    var id: Int64
+    """GitHub's repository id, which a rename or transfer keeps."""
 
 
 def topics_of(b: Span[UInt8, _], obj: Range) -> List[String]:
@@ -280,6 +282,7 @@ def parse_repo(body: String) -> RepoInfo:
         text(b, field(b, all, "language")),
         text(b, field(b, all, "fork")) == "true",
         topics_of(b, all),
+        long_of(text(b, field(b, all, "id"))),
     )
 
 
@@ -340,7 +343,7 @@ def verify(c: Candidate) raises -> Verdict:
     cheapest to dearest: the repository itself (one API call), its manifests
     (raw files, which GitHub doesn't count against the API limit), and the
     pushed commit (a second API call, made only if budget is left)."""
-    var empty = RepoInfo(c.repo, 0, 0, 0, "", "", "", 0, "", False, List[String]())
+    var empty = RepoInfo(c.repo, 0, 0, 0, "", "", "", 0, "", False, List[String](), 0)
     var r = github(String("/repos/", c.repo))
     # GitHub answers 403 or 429 when the rate limit is used up: not a verdict
     # on the repository, so the caller stops and tries it again later.

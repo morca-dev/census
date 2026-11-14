@@ -57,10 +57,13 @@ comptime REPOS_SCHEMA = (
     '{"id":11,"name":"language","required":false,"type":"string"},'
     '{"id":12,"name":"fork","required":false,"type":"boolean"},'
     '{"id":13,"name":"topics","required":false,"type":'
-    '{"type":"list","element-id":14,"element":"string","element-required":true}}]}'
+    '{"type":"list","element-id":14,"element":"string","element-required":true}},'
+    '{"id":15,"name":"repo_id","required":false,"type":"long"}]}'
 )
-"""mojo_history is keyed on `repo` (`owner/name`). `topics` came later
-(ensure_table adds it; rows from before read it as null)."""
+"""mojo_history is keyed on `repo` (`owner/name`), the name the repository
+was found under, which stays its key after a rename (`names.mojo`).
+`topics` and `repo_id` (GitHub's id) came later (ensure_table adds them;
+rows from before read them as null)."""
 
 comptime COMMITS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -123,11 +126,13 @@ comptime REPO_STATS_SCHEMA = (
     '{"id":15,"name":"description","required":false,"type":"string"},'
     '{"id":16,"name":"size_kb","required":false,"type":"long"},'
     '{"id":17,"name":"default_branch","required":false,"type":"string"},'
-    '{"id":18,"name":"renamed_to","required":false,"type":"string"}]}'
+    '{"id":18,"name":"renamed_to","required":false,"type":"string"},'
+    '{"id":19,"name":"repo_id","required":false,"type":"long"}]}'
 )
 """One row per repository per daily refresh (mojo_stats). `state` is `ok`,
 `renamed` (GitHub redirected to `renamed_to`), `gone` (404/410), `blocked`
-(451) or `error HTTP n`."""
+(451) or `error HTTP n`. `repo_id` is GitHub's id for the repository, which
+a rename keeps (null on rows from before it was recorded, #181)."""
 
 comptime ACTIVITY_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['

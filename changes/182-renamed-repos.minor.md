@@ -1,0 +1,1 @@
+- **Renamed and transferred repos:** shown and found under their current name, old links redirect; a backfill after deploying counts their activity under the new name. (#182)

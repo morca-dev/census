@@ -71,7 +71,8 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
 - **`pipelines/gharchive_index.mojo`**: a one-off that fills those three
   tables for days loaded before gharchive wrote them, reading each hour of
   `gharchive.events` once (`morca backfill gharchive_index <days>`).
-- **`pipelines/mojo_repos.mojo`**: a sensor on `gharchive.candidates`. For each
+- **`pipelines/mojo_repos.mojo`**: a sensor on `gharchive.candidates` (and
+  `mojo.repo_stats`, for renamed repositories' names). For each
   day it reads the candidates (repository names, the `language` of repository
   objects that pull-request and fork payloads embed, commit messages
   naming `.mojo`/`.🔥` files or `mojoproject.toml`) and checks them with
@@ -79,7 +80,9 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   Mojo package, or the pushed commit's files). Mojo repositories go into
   `mojo.repos` (created, first seen, how found, stars, forks, license,
   default branch, description, size, topics); every answer goes into
-  `mojo.checked`, so a repository is asked about once. Forks are left out.
+  `mojo.checked`, so a repository is asked about once. Forks are left out,
+  and so is a repository it has under another name (renamed or transferred,
+  by name or GitHub's repo id; see mojo_stats).
 - **`pipelines/mojo_history.mojo`**: keyed by repository (the `repo`
   column of `mojo.repos`, `owner/name`), 50 a run, and a sensor on
   `mojo.repos`: each snapshot mojo_repos commits starts runs for the
@@ -145,7 +148,8 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   `tools/head_versions.mojo` tries the readers on named repositories and
   prints the dependency rows.
 - **`pipelines/mojo_activity.mojo`**: daily, a sensor on
-  `gharchive.repo_hour`, `gharchive.releases` and `mojo.repos`, no API calls
+  `gharchive.repo_hour`, `gharchive.releases`, `mojo.repos` and
+  `mojo.repo_stats` (for renamed repositories' new names), no API calls
   and no event bytes. For each day, every repository in
   `mojo.repos`: `mojo.activity` (events, stars as WatchEvents, forks,
   published releases, issues and pull requests opened, pushes, distinct
@@ -161,7 +165,13 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   `mojo.repos` into `mojo.repo_stats` (stars, forks, open issues, watchers,
   topics, archived, last push, homepage, license, description, size), by
   month of `as_of`, so stars become a time series. A repository that is
-  gone, blocked or renamed is a row with that `state`; a rate limit is
+  gone, blocked or renamed is a row with that `state`, a renamed or
+  transferred one's with its new name (`renamed_to`), and every answer
+  with GitHub's `repo_id`. `src/names.mojo` joins a repository's names
+  from these rows (the tables stay keyed by the name it was found under):
+  the console shows it under its current name, redirects its old
+  `/repos/` and `/api/repos/` links, searches and resolves dependencies by
+  every name, and mojo_activity counts the events of each name it had. A rate limit is
   waited out by `Retry-After` / `X-RateLimit-Reset`. A rerun of a day
   replaces that day's rows. Then it asks once about each GitHub repository
   that `mojo.repo_deps` names and `mojo.repos` doesn't have, and keeps
@@ -169,7 +179,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
 - **`pipelines/mojo_embed.mojo`**: daily at 07:00 UTC (daily partitions
   from 2026-11-10), a sentence embedding of each repository's name,
   description and topics into `mojo.repo_embeddings` (384 float32 values,
-  L2-normalized, as `binary`), with
+  L2-normalized, as `binary`; a renamed repository's under its new name), with
   [encoder.mojo](https://github.com/magmalake/encoder.mojo) running
   `BAAI/bge-small-en-v1.5` in the step's process (no Python, no dista). The
   text is `mojo.repos`'s, overridden by the latest `ok` row of

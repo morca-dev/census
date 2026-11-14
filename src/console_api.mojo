@@ -2,7 +2,7 @@
 migrations per month and one repo with its commits, migrations, activity,
 releases and similar repos."""
 
-from flare.http import Request, Response, internal_error, not_found, ok_json
+from flare.http import Request, Response, internal_error, not_found, ok_json, redirect
 
 from days import day_text
 from jscan import micros_to_iso
@@ -221,6 +221,7 @@ def _lib_json(l: Library, category: String = String()) -> String:
         ',"open_issues":', l.open_issues, ',"watchers":', l.watchers,
         ',"archived":', "true" if l.archived else "false",
         ',"state":', _q(l.state), ',"renamed_to":', _q(l.renamed_to),
+        ',"aliases":', _strs_json(l.aliases),
         ',"declared_deps":', "null" if l.declared_deps < 0 else String(l.declared_deps),
         ',"depends_on":', _strs_json(l.depends_on), ',"used_by":', _strs_json(l.used_by),
         ',"used_by_forks":', _strs_json(l.used_by_forks), ',"second_degree":', _strs_json(l.second_degree),
@@ -287,6 +288,9 @@ def repo_json(req: Request, c: Cache) raises -> Response:
         var repo = String(req.param("owner"), "/", req.param("name"))
         var found = c.find(repo)
         if not found:
+            var moved = c.moved_to(repo)
+            if moved.byte_length() > 0:
+                return redirect(String("/api/repos/", moved), 301)
             return not_found(req.url)
         var data = c.data(repo)
         var out = String('{"library":', _lib_json(found.value(), c.category_of(repo)), ',"migrations":[')

@@ -1,12 +1,16 @@
 """Counts each Mojo repository's daily activity and releases from GH Archive,
 without calling the GitHub API.
 
-Daily from 2023-01-01 and a sensor on `gharchive.repo_hour`, `gharchive.releases` and `mojo.repos`:
-each day gharchive loads starts a run for that day, and so does each
-snapshot mojo_repos adds repositories in. A run's one step reads the day's
+Daily from 2023-01-01 and a sensor on `gharchive.repo_hour`, `gharchive.releases`, `mojo.repos`
+and `mojo.repo_stats`: each day gharchive loads starts a run for that day,
+and so does each snapshot mojo_repos adds repositories in and mojo_stats's
+daily one, which can name a repository's new name after a rename or a
+transfer. A run's one step reads the day's
 counts (`gharchive.repo_hour`, which gharchive wrote per repository, actor
 and hour while it parsed the events) for every repository in `mojo.repos`, and writes `mojo.activity`
 (counts per repository and day) and `mojo.releases` (published releases).
+A repository renamed or transferred is counted under each of its names
+(`names.mojo`), the events having the name it had that day.
 
 **Repositories found later get their whole history.** A repository isn't
 caught up until it is in `mojo.activity_repos`. A run that finds members
@@ -57,6 +61,7 @@ from lake import (
     GH_RELEASES,
     RELEASES,
     REPO_HOUR,
+    REPO_STATS,
     REPOS,
     activity_repos_schema,
     activity_schema,
@@ -65,6 +70,7 @@ from lake import (
     releases_spec,
     ts,
 )
+from names import NameRow, name_columns, name_rows, names_from
 from replace import partition_files, read_partition_files, replace_files
 
 
@@ -78,8 +84,9 @@ comptime ActivityTasks = Tasks[DayTask]
 
 
 def _members(mut ctx: Ctx) raises -> Dict[String, Int64]:
-    """The repositories of mojo.repos at the step's pinned snapshot, with the
-    day each was created (0 if GitHub didn't say)."""
+    """The repositories of mojo.repos at the step's pinned snapshot, under
+    each name they had (mojo.repo_stats), with the day each was created (0
+    if GitHub didn't say)."""
     # `scan(ctx, ...)` is morca's pinned scan: a retry of the step sees the
     # same members even if mojo_repos has committed since.
     var out = Dict[String, Int64]()
@@ -90,6 +97,30 @@ def _members(mut ctx: Ctx) raises -> Dict[String, Int64]:
         for r in range(b.num_rows):
             var at = i64_at(b.column(ic), r)
             out[str_at(b.column(ir), r)] = at // 86_400_000_000 if at > 0 else 0
+    # A renamed or transferred repository's events come under its new name
+    # from then on, and before under its old ones: every name it had is a
+    # member, with its rows under that name, which the console adds up
+    # (#181). A name new to the members is caught up like a new repository.
+    var rows = List[NameRow]()
+    var stats: Optional[Table] = None
+    try:
+        stats = table(ctx, REPO_STATS)
+    except e:
+        ctx.log(String(REPO_STATS, " not read (", e, "); members by their names in ", REPOS))
+    if stats and stats.value().metadata.has_current_snapshot:
+        for b in scan(ctx, stats.value()).select(name_columns(stats.value())).to_batches():
+            rows.extend(name_rows(b))
+    if len(rows) == 0:
+        return out^
+    var keys = List[String]()
+    for k in out.keys():
+        keys.append(k)
+    var names = names_from(keys, rows)
+    for ref k in keys:
+        var created = out[k]
+        for n in names.names_of(k):
+            if n not in out:
+                out[n] = created
     return out^
 
 
@@ -475,7 +506,7 @@ comptime Activity = Step[
     activity,
     Mapped,
     retries=1,
-    reads=[REPO_HOUR, GH_RELEASES, REPOS],
+    reads=[REPO_HOUR, GH_RELEASES, REPOS, REPO_STATS],
     writes=[ACTIVITY, RELEASES, ACTIVITY_REPOS],
 ]
 # `sensor=True`: the scheduler starts a run when a run of another pipeline

@@ -1,13 +1,16 @@
 """Finds new Mojo repositories among each day's GH Archive candidates by asking
 GitHub, and adds them to mojo.repos.
 
-A sensor: each day gharchive commits starts a run for that day. The step
+A sensor: each day gharchive commits starts a run for that day, and so does
+mojo_stats's daily commit of `mojo.repo_stats`. The step
 reads the day's rows of `gharchive.candidates` (which gharchive's hour tasks
 wrote with `detect.scan_event` while they parsed the events), asks
 GitHub about the ones it hasn't asked about before (`detect.verify`), and
 appends the Mojo ones to `mojo.repos` and every answer to `mojo.checked`.
 A repository already in mojo.repos, read again just before the append, is
-never appended again.
+never appended again, nor is one under a name it had or has now: a
+renamed or transferred repository's events come under its new name, which
+mojo.repo_stats records with GitHub's id for it (`names.mojo`, #181).
 mojo_history is keyed on `mojo.repos`' `repo` column, so each snapshot of
 it starts mojo_history for the repositories it adds.
 
@@ -20,6 +23,7 @@ run checks those first, whatever day it is for.
 
 from std.os import getenv, setenv
 
+from iceberg.catalog.filesystem import Table
 from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
 from iceberg.nested import ColumnTree
 from iceberg.values import Datum
@@ -32,10 +36,12 @@ from cols import col, i64_at, str_at, str_range
 from detect import Candidate, RepoInfo, Verdict, verify
 from hourindex import candidates_from
 from jscan import days_from_civil
+from names import NameRow, Names, name_columns, name_rows, names_from
 from lake import (
     CHECKED,
     CANDIDATES,
     REPOS,
+    REPO_STATS,
     checked_schema,
     json_strings,
     repos_schema,
@@ -58,6 +64,34 @@ def _known(mut ctx: Ctx, dataset: String) raises -> Dict[String, Bool]:
         for r in range(b.num_rows):
             out[str_at(a, r)] = True
     return out^
+
+
+def _names(mut ctx: Ctx, known: Dict[String, Bool]) raises -> Names:
+    """The names of the repositories of mojo.repos, old and new, from
+    mojo.repo_stats (#181), and the GitHub ids mojo.repos has for them, so a
+    candidate under a repository's new name isn't added again."""
+    var keys = List[String]()
+    for k in known.keys():
+        keys.append(k)
+    var rows = List[NameRow]()
+    var stats: Optional[Table] = None
+    try:
+        stats = table(ctx, REPO_STATS)
+    except e:
+        ctx.log(String(REPO_STATS, " not read (", e, "); names as in ", REPOS))
+    if stats and stats.value().metadata.has_current_snapshot:
+        for b in scan(ctx, stats.value()).select(name_columns(stats.value())).to_batches():
+            rows.extend(name_rows(b))
+    # The ids of mojo.repos' own rows (since #181), as rows of a day before
+    # any of mojo.repo_stats', so they join but don't name.
+    var t = table(ctx, REPOS)
+    if t.metadata.has_current_snapshot and t.metadata.schema().has_field(15):
+        for b in t.scan().select(["repo", "repo_id"]).to_batches():
+            for r in range(b.num_rows):
+                var id = i64_at(b.column(1), r)
+                if id > 0:
+                    rows.append(NameRow(str_at(b.column(0), r), -1, "id", "", id))
+    return names_from(keys, rows)
 
 
 @fieldwise_init
@@ -159,6 +193,7 @@ def _repos_batch(found: List[_Found], known: Dict[String, Bool]) raises -> Tuple
     var c_lang = ColumnBuilder.of(rs, 11)
     var c_fork = ColumnBuilder.of(rs, 12)
     var c_topics = NestedBuilder.of(rs, 13)
+    var c_id = ColumnBuilder.of(rs, 15)
     var n = 0
     var taken = Dict[String, Bool]()
     for ref f in found:
@@ -179,6 +214,7 @@ def _repos_batch(found: List[_Found], known: Dict[String, Bool]) raises -> Tuple
         c_lang.add(str_or_null(info.language))
         c_fork.add(Datum.bool_(info.fork))
         c_topics.add(json_strings(info.topics))
+        c_id.add(Datum.long_(info.id) if info.id > 0 else Datum.none())
         n += 1
     # `topics` is a list column, so this table's batch is built from column
     # trees (`NestedBuilder`), not the flat `batch_of` used for the others.
@@ -186,6 +222,7 @@ def _repos_batch(found: List[_Found], known: Dict[String, Bool]) raises -> Tuple
     for ref c in [c_repo^, c_created^, c_first^, c_found^, c_stars^, c_forks^, c_license^, c_branch^, c_desc^, c_size^, c_lang^, c_fork^]:
         trees.append(c.build_tree())
     trees.append(c_topics.build())
+    trees.append(c_id.build_tree())
     return (batch_of_columns(trees^), n)
 
 
@@ -207,10 +244,13 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     var repos_t = ensure_table(ctx, REPOS, repos_schema())
     var checked_t = ensure_table(ctx, CHECKED, checked_schema())
     var known = _known(ctx, REPOS)
+    # A repository renamed or transferred since it was found shows up in
+    # the events under its new name: it is one of mojo.repos already.
+    var names = _names(ctx, known)
     var asked = _asked(ctx)
     var todo = List[Candidate]()
     for e in found.items():
-        if e.key in known:
+        if e.key in known or names.knows(e.key):
             continue
         if e.key in asked and not asked[e.key].pending:
             continue
@@ -219,7 +259,7 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     # signals and sha were kept in mojo.checked, so they are checked without
     # reading the old day's candidates again.
     for e in asked.items():
-        if e.value.pending and e.key not in found and e.key not in known:
+        if e.value.pending and e.key not in found and e.key not in known and not names.knows(e.key):
             todo.append(e.value.candidate.copy())
     # Strongest signs first (`Candidate.rank`), so that when the budget runs
     # out it is the weakest guesses (a repository whose name merely contains
@@ -277,7 +317,12 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
                 # can differ from the event's after a rename or in case, so
                 # it is checked against `known` again, and against this run's
                 # additions.
-                if v.outcome == "mojo" and v.info.repo not in known and v.info.repo not in added_names:
+                # A new name of a repository mojo.repos has (GitHub's id,
+                # or a name mojo_stats saw) isn't added again either.
+                var have = names.known_as(v.info.repo, v.info.id)
+                if v.outcome == "mojo" and have.byte_length() > 0:
+                    ctx.log(String(c.repo, ": already in mojo.repos as ", have))
+                if v.outcome == "mojo" and have.byte_length() == 0 and v.info.repo not in known and v.info.repo not in added_names:
                     added_names[v.info.repo] = True
                     found_mojo.append(_Found(v.info.copy(), c.copy(), v.how))
                 # `remaining` is GitHub's X-RateLimit-Remaining: stop before
@@ -320,8 +365,8 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
 
 # `Mapped` runs the step once per partition of a run, here a `Day`. Reads and
 # writes are declared so `morca.tables` can enforce them and the UI can draw
-# the lineage: CANDIDATES is only read (the sensor's dataset), and the two
-# tables are written. `retries=1` re-runs a failed attempt once in the run.
+# the lineage: CANDIDATES and REPO_STATS (for renamed repositories' names)
+# are only read, and the two tables are written. `retries=1` re-runs a failed attempt once in the run.
 comptime FindRepos = Step[
     "find_repos",
     Day,
@@ -329,12 +374,14 @@ comptime FindRepos = Step[
     find_repos,
     Mapped,
     retries=1,
-    reads=[CANDIDATES],
+    reads=[CANDIDATES, REPO_STATS],
     writes=[REPOS, CHECKED],
 ]
 # `sensor=True`: no schedule; the scheduler starts a run when gharchive (or
 # gharchive_index) commits a snapshot of `gharchive.candidates`, for the days
-# that snapshot holds. Left at `max_runs=1`, days are checked one at a time,
+# that snapshot holds, and so does mojo_stats's daily snapshot of
+# `mojo.repo_stats` (for its day: that run checks the candidates still
+# waiting). Left at `max_runs=1`, days are checked one at a time,
 # which the `known`/`asked` reads above rely on.
 comptime MojoRepos = Pipeline[
     "mojo_repos",
