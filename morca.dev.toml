@@ -41,6 +41,10 @@ env = { DISTA_WORKER_SLOTS = "1" }
 memory_gb = "auto"
 # Without the dev stack's GITHUB_TOKEN_FILE its runs fail on the secret.
 secrets = { GITHUB_TOKEN = "orca/github-token" }
+# As in morca.toml, a month a run after the other pipelines; without fill_*
+# (CI keeps them out of this file) the search fill runs one at a time, all day.
+keys_per_run = 31
+priority = -10
 
 [pipelines.mojo_history]
 # Fixed at 2 GB: beta's host grants at most 2.2 GB, and a learned request
