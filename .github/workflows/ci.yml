@@ -32,6 +32,7 @@ jobs:
           pixi-version: v0.78.0
       - run: pixi run build
       - run: pixi run test
+      - run: pixi run test-register
       # morca.dev.toml (the dev stack's) has morca.toml's pipelines, without
       # fills or a worker pool's placement, plus the dev-only ballast (#97).
       - name: morca.dev.toml matches morca.toml

@@ -18,6 +18,21 @@ spec` item under `requirements:`) don't need a full parser.
 from overview import top_gains
 from versions import packages
 
+
+def republishes() -> Dict[String, String]:
+    """REPUBLISHES: repositories that republish another one's code without
+    being a GitHub fork of it, as their descriptions say ("Packaged
+    distribution of flare (ehsanmok/flare)"), by the lowercased republish,
+    to the repository they republish. `resolve` counts a project that
+    depends on one as a dependent of the upstream through a fork of it, as
+    for a fork (`ForkOf`). Curated: an entry is added when the republish's
+    description or README names its upstream, never guessed."""
+    var out = Dict[String, String]()
+    out["magmalake/flare_mlake"] = "ehsanmok/flare"
+    out["magmalake/json_mlake"] = "ehsanmok/json"
+    out["magmalake/mozz_mlake"] = "ehsanmok/mozz"
+    return out^
+
 comptime DEPENDS = "depends"
 """`relation` of a declared dependency."""
 comptime PROVIDES = "provides"
@@ -672,6 +687,7 @@ def resolve(
     rows: List[RepoDep],
     forks: Dict[String, ForkOf] = Dict[String, ForkOf](),
     aliases: Dict[String, String] = Dict[String, String](),
+    republished: Dict[String, String] = republishes(),
 ) raises -> DepGraph:
     """Each repository's dependencies that are census repositories, and the
     reverse.
@@ -700,7 +716,12 @@ def resolve(
     repositories to their names in `repos` (`names.Names.current`): a
     URL, a fork's parent or source, a row's own `repo` (mojo.repo_deps is
     keyed by the name a repository was found under) and the name in (3)
-    under an old name resolve to the repository as it is named now."""
+    under an old name resolve to the repository as it is named now.
+
+    `republished` (`republishes`) maps a republish to its upstream: a
+    dependency on the republish (a census repository or not) also makes the
+    project a dependent of the upstream, through a fork, when the upstream
+    is a census repository."""
     var g = DepGraph()
     var by_lower = Dict[String, String]()
     var by_short = Dict[String, List[String]]()
@@ -783,6 +804,16 @@ def resolve(
                             target = p
             if target.byte_length() == 0 and n in by_short and len(by_short[n]) == 1:
                 target = by_short[n][0]
+        # A republish of a census repository (`republishes`): its upstream
+        # too, as through a fork.
+        var upstream = String()
+        var named = target.lower() if target.byte_length() > 0 else d.dep_repo.lower()
+        if named.byte_length() > 0 and named in republished:
+            upstream = by_lower.get(republished.get(named, String()).lower(), String())
+        if upstream.byte_length() > 0 and upstream != me:
+            if me not in deps:
+                deps[me] = Dict[String, Bool]()
+            deps[me][upstream] = deps[me].get(upstream, False)
         if target.byte_length() == 0 or target == me:
             continue
         if me not in deps:

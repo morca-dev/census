@@ -1,18 +1,26 @@
 """Finds new Mojo repositories among each day's GH Archive candidates by asking
 GitHub, and adds them to mojo.repos.
 
-A sensor: each day gharchive commits starts a run for that day, and so does
-mojo_stats's daily commit of `mojo.repo_stats`. The step
+A sensor: each day gharchive commits starts a run for that day. The step
 reads the day's rows of `gharchive.candidates` (which gharchive's hour tasks
 wrote with `detect.scan_event` while they parsed the events), asks
 GitHub about the ones it hasn't asked about before (`detect.verify`), and
 appends the Mojo ones to `mojo.repos` and every answer to `mojo.checked`.
 A repository already in mojo.repos, read again just before the append, is
-never appended again, nor is one under a name it had or has now: a
-renamed or transferred repository's events come under its new name, which
-mojo.repo_stats records with GitHub's id for it (`names.mojo`, #181).
+never appended again, nor is one GitHub gives the id of a row of it
+(`repo_id`): a renamed or transferred repository's events come under its
+new name (#181). Rows from before ids were recorded have none, so such a
+repository can be added again under its new name; mojo_stats records the
+same id for both, and the console shows them as one (`names.mojo`).
+mojo.repo_stats isn't read here: mojo_stats reads mojo.repos, and a read
+of what it writes would be a cycle, which morca refuses to register.
 mojo_history is keyed on `mojo.repos`' `repo` column, so each snapshot of
 it starts mojo_history for the repositories it adds.
+
+GH Archive's recent hours lack the events that named most candidates, so
+each run also asks GitHub's search for the `language:Mojo` repositories
+created that day (and, within a week of today, pushed since), whatever their
+name (`detect.search_candidates`), and checks them with the rest.
 
 GitHub allows 60 API requests an hour without a token, so a run checks at
 most `MOJO_REPOS_BUDGET` candidates (default 25, or 1000 with
@@ -23,7 +31,6 @@ run checks those first, whatever day it is for.
 
 from std.os import getenv, setenv
 
-from iceberg.catalog.filesystem import Table
 from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
 from iceberg.nested import ColumnTree
 from iceberg.values import Datum
@@ -33,15 +40,15 @@ from morca.tables import append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import col, i64_at, str_at, str_range
-from detect import Candidate, RepoInfo, Verdict, verify
+from detect import Candidate, RepoInfo, Verdict, note, search_candidates, verify
 from hourindex import candidates_from
+from days import days_of
 from jscan import days_from_civil
-from names import NameRow, Names, name_columns, name_rows, names_from
+from names import NameRow, Names, names_from
 from lake import (
     CHECKED,
     CANDIDATES,
     REPOS,
-    REPO_STATS,
     checked_schema,
     json_strings,
     repos_schema,
@@ -67,30 +74,21 @@ def _known(mut ctx: Ctx, dataset: String) raises -> Dict[String, Bool]:
 
 
 def _names(mut ctx: Ctx, known: Dict[String, Bool]) raises -> Names:
-    """The names of the repositories of mojo.repos, old and new, from
-    mojo.repo_stats (#181), and the GitHub ids mojo.repos has for them, so a
-    candidate under a repository's new name isn't added again."""
+    """The repositories of mojo.repos with the GitHub ids its rows have (since
+    #181), so a candidate under a repository's new name isn't added again."""
     var keys = List[String]()
     for k in known.keys():
         keys.append(k)
     var rows = List[NameRow]()
-    var stats: Optional[Table] = None
-    try:
-        stats = table(ctx, REPO_STATS)
-    except e:
-        ctx.log(String(REPO_STATS, " not read (", e, "); names as in ", REPOS))
-    if stats and stats.value().metadata.has_current_snapshot:
-        for b in scan(ctx, stats.value()).select(name_columns(stats.value())).to_batches():
-            rows.extend(name_rows(b))
-    # The ids of mojo.repos' own rows (since #181), as rows of a day before
-    # any of mojo.repo_stats', so they join but don't name.
     var t = table(ctx, REPOS)
     if t.metadata.has_current_snapshot and t.metadata.schema().has_field(15):
         for b in t.scan().select(["repo", "repo_id"]).to_batches():
             for r in range(b.num_rows):
                 var id = i64_at(b.column(1), r)
                 if id > 0:
-                    rows.append(NameRow(str_at(b.column(0), r), -1, "id", "", id))
+                    # An answered row of no day: it joins by id and names
+                    # the repository by its key.
+                    rows.append(NameRow(str_at(b.column(0), r), -1, "ok", "", id))
     return names_from(keys, rows)
 
 
@@ -236,6 +234,21 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     repository already in `mojo.repos`, or already answered, is skipped."""
     var found = _day_candidates(ctx, d)
     ctx.log(String(String(d), ": ", len(found), " candidates"))
+    # GH Archive no longer has the events that named most Mojo repositories
+    # (`detect.mojo`): GitHub's search for the day's `language:Mojo`
+    # repositories adds the ones whose name doesn't say so. A day within a
+    # week of today also asks for the ones pushed since.
+    var day = String(d)
+    var recent = days_of(day) >= Int64(now() // 86_400) - 7
+    var searched = search_candidates(day, recent)
+    if searched[1].byte_length() > 0:
+        ctx.log(String("GitHub search: ", searched[1], "; going on with what it gave"))
+    var from_search = 0
+    for ref c in searched[0]:
+        if c.repo not in found:
+            from_search += 1
+        note(found, c.repo, "search", c.first_seen)
+    ctx.log(String("GitHub search: ", len(searched[0]), " Mojo repositories, ", from_search, " not among the events' candidates"))
 
     # Leave out what an earlier day already settled: a repository already in
     # mojo.repos, or one GitHub already answered about (`mojo`, `not mojo`,
@@ -245,12 +258,13 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     var checked_t = ensure_table(ctx, CHECKED, checked_schema())
     var known = _known(ctx, REPOS)
     # A repository renamed or transferred since it was found shows up in
-    # the events under its new name: it is one of mojo.repos already.
+    # the events under its new name; GitHub's id (below) says it is one of
+    # mojo.repos already.
     var names = _names(ctx, known)
     var asked = _asked(ctx)
     var todo = List[Candidate]()
     for e in found.items():
-        if e.key in known or names.knows(e.key):
+        if e.key in known:
             continue
         if e.key in asked and not asked[e.key].pending:
             continue
@@ -259,7 +273,7 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     # signals and sha were kept in mojo.checked, so they are checked without
     # reading the old day's candidates again.
     for e in asked.items():
-        if e.value.pending and e.key not in found and e.key not in known and not names.knows(e.key):
+        if e.value.pending and e.key not in found and e.key not in known:
             todo.append(e.value.candidate.copy())
     # Strongest signs first (`Candidate.rank`), so that when the budget runs
     # out it is the weakest guesses (a repository whose name merely contains
@@ -365,8 +379,8 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
 
 # `Mapped` runs the step once per partition of a run, here a `Day`. Reads and
 # writes are declared so `morca.tables` can enforce them and the UI can draw
-# the lineage: CANDIDATES and REPO_STATS (for renamed repositories' names)
-# are only read, and the two tables are written. `retries=1` re-runs a failed attempt once in the run.
+# the lineage: CANDIDATES is only read (the sensor's dataset), and the two
+# tables are written. `retries=1` re-runs a failed attempt once in the run.
 comptime FindRepos = Step[
     "find_repos",
     Day,
@@ -374,14 +388,12 @@ comptime FindRepos = Step[
     find_repos,
     Mapped,
     retries=1,
-    reads=[CANDIDATES, REPO_STATS],
+    reads=[CANDIDATES],
     writes=[REPOS, CHECKED],
 ]
 # `sensor=True`: no schedule; the scheduler starts a run when gharchive (or
 # gharchive_index) commits a snapshot of `gharchive.candidates`, for the days
-# that snapshot holds, and so does mojo_stats's daily snapshot of
-# `mojo.repo_stats` (for its day: that run checks the candidates still
-# waiting). Left at `max_runs=1`, days are checked one at a time,
+# that snapshot holds. Left at `max_runs=1`, days are checked one at a time,
 # which the `known`/`asked` reads above rely on.
 comptime MojoRepos = Pipeline[
     "mojo_repos",
