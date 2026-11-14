@@ -3,6 +3,15 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.8.0 - 2026-11-14
+
+- **Renamed and transferred repos:** shown and found under their current name, old links redirect; a backfill after deploying counts their activity under the new name. (#182)
+
+**After deploying** (deploy.sh shows these and runs the commands):
+
+- Run `morca backfill --rerun --allow-append mojo_activity 2026-11-13`.
+- Run `morca backfill --rerun mojo_embed 2026-11-13`.
+
 ## 1.7.0 - 2026-11-14
 
 - **Contributors per repo:** distinct commit authors, in all and per month, on the repo page and in its JSON; a backfill after deploying counts the repos read before. (#175)
