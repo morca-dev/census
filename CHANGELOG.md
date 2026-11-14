@@ -21,7 +21,7 @@ release.
 
 **After deploying** (deploy.sh shows these and runs the commands):
 
-- Run `morca backfill --rerun --as-fill mojo_repos 2023-01-01..2026-11-13`.
+- Run `morca backfill --rerun --allow-append --as-fill mojo_repos 2023-01-01..2026-11-13`.
 
 ## 1.8.0 - 2026-11-14
 
