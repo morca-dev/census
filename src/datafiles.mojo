@@ -9,15 +9,13 @@ carries as a `Codec`), which the step commits as one append
 from std.os import getenv
 from std.time import perf_counter_ns
 
-from iceberg.catalog.filesystem import Table
 from morca.tables import DataFiles as FileEntries
-from morca.tables import FileWriter
+from morca.tables import FileWriter, Table
 from threads import num_cpus
 
 from eventrows import (
     GROUP_BYTES,
     EventRows,
-    FileTarget,
     arrival_order,
     order_by_repo_type,
     write_event_files,
@@ -96,42 +94,26 @@ struct TableWriter(BatchSink, Movable):
     A file is written a row group of `eventrows.GROUP_BYTES` at a time
     (`eventrows.write_event_files`), so the rows are never copied whole."""
 
-    var target: FileTarget
-    var files: FileEntries
+    var writer: FileWriter
     var rows: Int
     var write_ns: Int
     var sort_ns: Int
     var sorted: Bool
     var group_bytes: Int
 
-    def __init__(out self, table: Table, sorted: Bool = True) raises:
+    def __init__(
+        out self,
+        table: Table,
+        sorted: Bool = True,
+        group_bytes: Int = GROUP_BYTES,
+    ) raises:
         var w = FileWriter(table)
         # 4 MB pages: the JSON column's 20% growth at the 1 MB default is 4%
         # at 4 MB.
         w.options.num_workers = write_threads()
         if "write.parquet.page-size-bytes" not in table.metadata.properties:
             w.options.page_size = 4 * 1024 * 1024
-        self = Self(
-            FileTarget(
-                w.io.copy(),
-                w.location,
-                w.schema.copy(),
-                w.spec.copy(),
-                w.sort_order_id,
-                w.options.copy(),
-            ),
-            sorted,
-        )
-
-    def __init__(
-        out self,
-        var target: FileTarget,
-        sorted: Bool = True,
-        group_bytes: Int = GROUP_BYTES,
-    ):
-        """Into `target` directly, without a catalog (for tests)."""
-        self.target = target^
-        self.files = FileEntries()
+        self.writer = w^
         self.rows = 0
         self.write_ns = 0
         self.sort_ns = 0
@@ -148,20 +130,16 @@ struct TableWriter(BatchSink, Movable):
         )
         self.sort_ns += Int(perf_counter_ns() - t_sort)
         var t0 = perf_counter_ns()
-        var written = write_event_files(
-            self.target, rows, order, self.group_bytes
-        )
-        for ref f in written:
-            self.files.files.append(f.copy())
+        write_event_files(self.writer, rows, order, self.group_bytes)
         self.rows += len(rows)
         self.write_ns += Int(perf_counter_ns() - t0)
 
-    def finish(deinit self) -> DataFiles:
+    def finish(deinit self) raises -> DataFiles:
         """Closes the last file and returns the entries of all of them, with
         the row count and the time spent sorting and writing."""
         var out = DataFiles()
         out.rows = self.rows
         out.sort_ms = self.sort_ns // 1_000_000
         out.write_ms = self.write_ns // 1_000_000
-        out.files = self.files^
+        out.files = self.writer^.finish()
         return out^

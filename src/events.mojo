@@ -17,7 +17,7 @@ nothing is written to `gharchive.events`.
 from std.os import getenv
 from std.time import perf_counter_ns
 
-from iceberg.catalog.filesystem import Table
+from morca.tables import Table
 from parquet import RecordBatch
 
 from datafiles import BatchSink, DataFiles, TableWriter

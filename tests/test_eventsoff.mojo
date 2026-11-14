@@ -15,29 +15,26 @@ from std.time import perf_counter_ns
 from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
 
 from deflate import gzip
-from iceberg.catalog.filesystem import FilesystemCatalog, Table
+from iceberg.catalog.filesystem import FilesystemCatalog
 from iceberg.io import FileIO
-from iceberg.write import WriteOptions
+from iceberg.schema import Schema
+from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
 from morca.tables import DataFiles as FileEntries
+from morca.tables import Table
 from parquet import ParquetReader
 from parquet_full import AllCodecs
 
 from datafiles import DataFiles, TableWriter
-from eventrows import FileTarget
 from events import ROWS_PER_BATCH, decode_hour, keep_events
 from gzstream import Whole
 from lake import (
-    candidates_schema,
-    candidates_spec,
+    CANDIDATES_SCHEMA,
+    EVENTS_SCHEMA,
+    GH_RELEASES_SCHEMA,
+    REPO_HOUR_SCHEMA,
     events_properties,
-    events_schema,
-    events_spec,
-    gh_releases_schema,
-    gh_releases_spec,
     index_properties,
     repo_hour_properties,
-    repo_hour_schema,
-    repo_hour_spec,
 )
 
 comptime ROWS = ROWS_PER_BATCH + 7_000
@@ -121,6 +118,26 @@ def _hour() raises -> List[UInt8]:
     return gz^
 
 
+def _by_day(
+    mut cat: FilesystemCatalog,
+    name: String,
+    schema: String,
+    source_id: Int,
+    part: String,
+    var props: Dict[String, String],
+) raises -> Table:
+    """A table partitioned by the day of field `source_id`, as lake's specs
+    are, made with iceberg (a step's `ensure_table` needs a run) and used
+    through morca's tables."""
+    var spec = PartitionSpec(
+        0, [PartitionField.single(source_id, 1000, part, parse_transform("day"))]
+    )
+    var t = cat.create_table(
+        "gharchive", name, Schema.parse(schema), spec, props^
+    )
+    return Table.load(t.metadata.location)
+
+
 struct Tables(Movable):
     var candidates: Table
     var repo_hour: Table
@@ -128,16 +145,16 @@ struct Tables(Movable):
 
     def __init__(out self, dir: String) raises:
         var cat = FilesystemCatalog.local(dir)
-        self.candidates = cat.create_table(
-            "gharchive", "candidates", candidates_schema(), candidates_spec(),
+        self.candidates = _by_day(
+            cat, "candidates", CANDIDATES_SCHEMA, 2, "hour_day",
             index_properties(),
         )
-        self.repo_hour = cat.create_table(
-            "gharchive", "repo_hour", repo_hour_schema(), repo_hour_spec(),
+        self.repo_hour = _by_day(
+            cat, "repo_hour", REPO_HOUR_SCHEMA, 2, "hour_day",
             repo_hour_properties(),
         )
-        self.releases = cat.create_table(
-            "gharchive", "releases", gh_releases_schema(), gh_releases_spec(),
+        self.releases = _by_day(
+            cat, "releases", GH_RELEASES_SCHEMA, 2, "created_day",
             index_properties(),
         )
 
@@ -146,9 +163,11 @@ def _same_files(a: FileEntries, b: FileEntries, what: String) raises:
     """The same number of files, each with the same bytes and rows."""
     var io = FileIO.local()
     assert_equal(len(a), len(b), what)
+    var af = a.files()
+    var bf = b.files()
     for i in range(len(a)):
-        ref x = a.files[i]
-        ref y = b.files[i]
+        ref x = af[i]
+        ref y = bf[i]
         assert_equal(x.record_count, y.record_count, what)
         var bx = io.read_all(x.file_path)
         var by = io.read_all(y.file_path)
@@ -179,16 +198,13 @@ def test_index_files_are_the_same_without_the_events() raises:
         getenv("TMPDIR", "/tmp"), "/census-test-eventsoff-", perf_counter_ns()
     )
     var io = FileIO.local()
-    var opts = WriteOptions.from_properties(events_properties())
-    opts.page_size = 4 * 1024 * 1024
     var on_t = Tables(String(base, "/on"))
     var off_t = Tables(String(base, "/off"))
 
+    # 4 MB pages: TableWriter's default without the table property.
+    var ev_cat = FilesystemCatalog.local(String(base, "/events"))
     var w = TableWriter(
-        FileTarget(
-            io.copy(), String(base, "/events"), events_schema(), events_spec(),
-            0, opts^,
-        )
+        _by_day(ev_cat, "events", EVENTS_SCHEMA, 3, "created_day", events_properties())
     )
     var on = decode_hour(
         Whole(Span(gz)), Optional(w^), on_t.candidates, on_t.repo_hour,
@@ -217,7 +233,7 @@ def test_index_files_are_the_same_without_the_events() raises:
     _same_files(on.index.candidates, off.index.candidates, "candidates")
     _same_files(on.index.repo_hour, off.index.repo_hour, "repo_hour")
     _same_files(on.index.releases, off.index.releases, "releases")
-    for ref f in on.files.files:
+    for f in on.files.files():
         io.delete(f.file_path)
 
 

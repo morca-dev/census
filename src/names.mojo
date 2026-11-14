@@ -22,7 +22,7 @@ A name GitHub gives a new repository after the old one moved away isn't
 told apart from the old one: it would be joined to the renamed repository.
 """
 
-from iceberg.catalog.filesystem import Table
+from morca.tables import Table
 from parquet import RecordBatch
 
 from cols import col, has_col, i32_at, i64_at, str_at
@@ -59,8 +59,8 @@ def name_columns(t: Table) -> List[String]:
     run since #181)."""
     var out: List[String] = ["repo", "as_of", "state", "renamed_to"]
     try:
-        _ = t.metadata.schema().find_by_name("repo_id")
-        out.append("repo_id")
+        if t.metadata.schema().has_field_named("repo_id"):
+            out.append("repo_id")
     except:
         pass
     return out^

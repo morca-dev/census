@@ -73,7 +73,8 @@ RUN --mount=type=cache,id=mojo-cache,target=/mojo-cache mkdir -p /out/bin /out/p
 # binaries, not their links, which objcopy would replace with copies.
 RUN for b in /out/bin/multicall-*; do objcopy --compress-debug-sections=zlib "$b" || exit 1; done
 # Only the pixi environment's libraries the binaries link or dlopen: libpq
-# (postgres), flare's shims (morca ui, apps), and every tin's shim, such as
+# (postgres), flare's shims (morca ui, apps), liblake (morca.tables: the
+# lake's iceberg and parquet), and every tin's shim, such as
 # objectstore's and the codecs' (zstd, for Iceberg writes); and
 # llvm-symbolizer, which Mojo's runtime runs to name a crash's frames, with
 # what it links. Stripped of their symbol tables (libstdc++: 23.6 MB, 2.7
@@ -82,7 +83,7 @@ RUN for b in /out/bin/multicall-*; do objcopy --compress-debug-sections=zlib "$b
 # names as links. OpenSSL stays conda's: libcurl and libpq need 3.2.
 RUN env=/src/project/.pixi/envs/default && mkdir -p /out/lib /out/libexec \
     && cp -L $env/bin/llvm-symbolizer /out/libexec/ \
-    && loaded=$(ls $env/lib/libflare_*.so $env/lib/lib*mojo*.so 2>/dev/null) \
+    && loaded=$(ls $env/lib/libflare_*.so $env/lib/lib*mojo*.so $env/lib/liblake.so 2>/dev/null) \
     && ldd /out/bin/* /out/pipelines/* /out/libexec/* $loaded $env/lib/libpq.so.5 2> /dev/null \
         | awk -v e="$env" '$3 ~ "^"e {print $3}' | grep -v -e '/libicu' -e '/libpsl' -e '/libpq\.' \
         | sort -u | xargs -r cp -L -t /out/lib \

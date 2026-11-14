@@ -5,13 +5,11 @@ vector as bytes.
 
 from std.memory import bitcast
 
-from iceberg.batch import ColumnBuilder, batch_of_columns
-from iceberg.nested import ColumnTree
-from iceberg.values import Datum
+from morca.tables import BatchBuilder
 from parquet import RecordBatch
 
 from cols import col, i32_at, i64_at, str_at, str_range, is_valid
-from lake import repo_embeddings_schema, ts
+from lake import repo_embeddings_schema
 
 
 @fieldwise_init
@@ -137,20 +135,15 @@ def embed_rows(b: RecordBatch) raises -> List[EmbedRow]:
 
 
 def embed_batch(rows: List[EmbedRow]) raises -> RecordBatch:
-    var s = repo_embeddings_schema()
-    var cs = List[ColumnBuilder]()
-    for id in range(1, 9):
-        cs.append(ColumnBuilder.of(s, id))
+    var b = BatchBuilder(repo_embeddings_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(Datum.string_(r.model))
-        cs[2].add(Datum.string_(r.model_rev))
-        cs[3].add(Datum.string_(r.input_hash))
-        cs[4].add(Datum.string_(r.input))
-        cs[5].add(Datum.int_(Int64(r.dim)))
-        cs[6].add(Datum.binary_(r.vector.copy()))
-        cs[7].add(ts(r.embedded_at))
-    var trees = List[ColumnTree]()
-    for ref c in cs:
-        trees.append(c.build_tree())
-    return batch_of_columns(trees^)
+        b.add_str(cs[0], r.repo)
+        b.add_str(cs[1], r.model)
+        b.add_str(cs[2], r.model_rev)
+        b.add_str(cs[3], r.input_hash)
+        b.add_str(cs[4], r.input)
+        b.add_int(cs[5], Int64(r.dim))
+        b.add_bytes(cs[6], Span(r.vector))
+        b.add_int(cs[7], r.embedded_at)
+    return b^.build()

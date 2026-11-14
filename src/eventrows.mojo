@@ -19,25 +19,12 @@ groups instead of one.
 
 from std.memory import unsafe_memcpy
 
-from iceberg.batch import ColumnBuilder, is_var_width_array
-from iceberg.io import FileIO, join_path
-from iceberg.kernels import arrow_type_for
-from iceberg.manifest import DataFile
-from iceberg.schema import Schema
-from iceberg.transforms import PartitionSpec
-from iceberg.util import uuid4, zero_pad
-from iceberg.values import Datum
-from iceberg.write import (
-    WriteOptions,
-    codec_value,
-    data_file_from_footer,
-    partition_path,
-)
-from parquet import ListSink, ParquetWriter, RecordBatch, WriterOptions
+from arrow_mlake import AT_UTF8
+from morca.tables import BatchBuilder, FileWriter, Schema
+from parquet import RecordBatch
 from parquet.arrow import ArrayData
-from parquet_full import AllCodecs
 
-from lake import events_schema, ts
+from lake import EVENTS_SCHEMA
 
 comptime CHUNK_BYTES = 1 << 22
 """A string column grows a 4 MB piece at a time (a longer value gets a piece
@@ -77,15 +64,14 @@ MB; less the 108 MB of `.json.gz` the tool holds whole, about 180-190 MB an
 hour, against 440-480 MB."""
 
 
-def _meta(schema: Schema, field_id: Int) raises -> ArrayData:
-    """An empty column of `schema`'s field, as `ColumnBuilder` types it."""
-    var b = ColumnBuilder.of(schema, field_id)
-    var a = ArrayData(
-        arrow_type_for(b.kind, b.precision, b.scale, b.length), b.name
-    )
-    a.nullable = b.nullable
-    a.field_id = Int32(field_id)
-    return a^
+def _meta(empty: BatchBuilder, name: String) raises -> ArrayData:
+    """An empty column of the events, as the lake types it (`empty` is a
+    `BatchBuilder` of the schema, with no rows)."""
+    ref a = empty.arena.nodes[empty.col(name)]
+    var out = ArrayData(a.type.copy(), a.name.copy())
+    out.nullable = a.nullable
+    out.field_id = a.field_id
+    return out^
 
 
 struct TextColumn(Movable, Sized):
@@ -100,10 +86,10 @@ struct TextColumn(Movable, Sized):
     var nulls: Int
     var bytes: Int
 
-    def __init__(out self, schema: Schema, field_id: Int) raises:
-        self.meta = _meta(schema, field_id)
-        if not is_var_width_array(self.meta):
-            raise Error("eventrows: field ", field_id, " is not a string")
+    def __init__(out self, empty: BatchBuilder, name: String) raises:
+        self.meta = _meta(empty, name)
+        if self.meta.type.id != AT_UTF8:
+            raise Error("eventrows: column ", name, " is not a string")
         self.pieces = List[List[UInt8]]()
         self.at = List[Int64]()
         self.size = List[Int32]()
@@ -184,8 +170,8 @@ struct LongColumn(Movable):
     var meta: ArrayData
     var values: List[Int64]
 
-    def __init__(out self, schema: Schema, field_id: Int) raises:
-        self.meta = _meta(schema, field_id)
+    def __init__(out self, empty: BatchBuilder, name: String) raises:
+        self.meta = _meta(empty, name)
         self.values = List[Int64]()
 
     @always_inline
@@ -219,13 +205,13 @@ struct EventRows(Movable, Sized):
     var payload: TextColumn
 
     def __init__(out self) raises:
-        var s = events_schema()
-        self.id = LongColumn(s, 1)
-        self.type = TextColumn(s, 2)
-        self.created = LongColumn(s, 3)
-        self.repo = TextColumn(s, 4)
-        self.actor = TextColumn(s, 5)
-        self.payload = TextColumn(s, 6)
+        var s = BatchBuilder(Schema.parse(EVENTS_SCHEMA))  # the column types
+        self.id = LongColumn(s, "id")
+        self.type = TextColumn(s, "type")
+        self.created = LongColumn(s, "created_at")
+        self.repo = TextColumn(s, "repo")
+        self.actor = TextColumn(s, "actor")
+        self.payload = TextColumn(s, "payload")
 
     def __len__(self) -> Int:
         return len(self.id.values)
@@ -343,127 +329,59 @@ def order_by_repo_type(rows: EventRows) -> List[Int32]:
     return order^
 
 
-struct FileTarget(Movable):
-    """Where `write_event_files` writes: a table's data directory, schema,
-    spec and write properties (the fields of an `morca.tables.FileWriter`)."""
-
-    var io: FileIO
-    var location: String
-    var schema: Schema
-    var spec: PartitionSpec
-    var sort_order_id: Int
-    var options: WriteOptions
-
-    def __init__(
-        out self,
-        var io: FileIO,
-        location: String,
-        var schema: Schema,
-        var spec: PartitionSpec,
-        sort_order_id: Int,
-        var options: WriteOptions,
-    ):
-        self.io = io^
-        self.location = location
-        self.schema = schema^
-        self.spec = spec^
-        self.sort_order_id = sort_order_id
-        self.options = options^
+comptime _DAY_US: Int64 = 86_400_000_000
 
 
-def _partition(t: FileTarget, rows: EventRows, row: Int) raises -> List[Datum]:
-    var values = List[Datum]()
-    for ref f in t.spec.fields:
-        var v: Datum
-        if f.source_id == 3:
-            v = ts(rows.created.values[row])
-        elif f.source_id == 1:
-            v = Datum.long_(rows.id.values[row])
-        else:
-            raise Error("eventrows: can't partition on field ", f.source_id)
-        values.append(f.transform.apply(v))
-    return values^
-
-
-def _key(values: List[Datum]) -> String:
-    var k = String()
-    for ref v in values:
-        k += String("|", Int(v.valid), ":", v.i)
-    return k^
+def _day(micros: Int64) -> Int64:
+    """The day partition of a `created_at` (days since 1970-01-01)."""
+    var d = micros // _DAY_US
+    if micros < 0 and d * _DAY_US != micros:
+        d -= 1
+    return d
 
 
 def write_event_files(
-    t: FileTarget,
+    mut w: FileWriter,
     rows: EventRows,
     order: List[Int32],
     group_bytes: Int = GROUP_BYTES,
-) raises -> List[DataFile]:
-    """Rows `order[0]`, `order[1]`, ... of `rows` into one Parquet file per
-    partition they fall in (in the order each partition first appears),
-    each file in row groups of at most `group_bytes` of strings. What
-    iceberg's `write_data_files` writes of the batch `rows.batch(order)`,
-    row for row and in the same order, file for file, but in row groups."""
-    var out = List[DataFile]()
+) raises:
+    """Rows `order[0]`, `order[1]`, ... of `rows` into `w`, one Parquet file
+    per day they fall in (`gharchive.events` is partitioned by the day of
+    `created_at`; in the order each day first appears), each file in row
+    groups of at most `group_bytes` of strings (`FileWriter.write_row_group`).
+    The rows of what writing the batch `rows.batch(order)` writes, row for
+    row and in the same order, file for file, but in row groups; each file
+    is closed before the next is started."""
     if len(order) == 0:
-        return out^
-    var keys = Dict[String, Int]()
-    var values = List[List[Datum]]()
+        return
+    var keys = Dict[Int64, Int]()
     var members = List[List[Int32]]()
     for r in order:
-        var v = _partition(t, rows, Int(r))
-        var k = _key(v)
+        var k = _day(rows.created.values[Int(r)])
         var g: Int
         if k in keys:
             g = keys[k]
         else:
             g = len(members)
-            keys[k^] = g
-            values.append(v^)
+            keys[k] = g
             members.append(List[Int32]())
         members[g].append(r)
-    var opts = WriterOptions()
-    opts.codec = codec_value(t.options.codec)
-    opts.row_group_size = t.options.row_group_rows
-    opts.data_page_size = t.options.page_size
-    opts.compression_level = t.options.compression_level
-    opts.use_dictionary = t.options.use_dictionary
-    opts.num_workers = t.options.num_workers
-    var schema_json = t.schema.to_json()
+    var group_rows = w.options.row_group_rows
+    if group_rows <= 0:
+        group_rows = Int.MAX
     for g in range(len(members)):
         ref these = members[g]
-        var writer = ParquetWriter[AllCodecs](opts.copy())
-        writer.add_metadata("iceberg.schema", schema_json)
-        var sink = ListSink()
         var lo = 0
         while lo < len(these):
             var hi = lo
             var size = 0
-            while hi < len(these) and hi - lo < opts.row_group_size:
+            while hi < len(these) and hi - lo < group_rows:
                 var b = rows.row_bytes(Int(these[hi]))
                 if hi > lo and size + b > group_bytes:
                     break
                 size += b
                 hi += 1
-            var slice = rows.batch(Span(these)[lo:hi])
-            writer.write_batch_to(slice.arena, slice.roots, sink)
+            w.write_row_group(rows.batch(Span(these)[lo:hi]))
             lo = hi
-        var written = writer^.finish_to(sink)
-        var dir = join_path(t.location, "data")
-        var rel = partition_path(t.spec, values[g])
-        if rel != "":
-            dir = join_path(dir, rel)
-        var path = join_path(dir, uuid4() + "-" + zero_pad(g, 5) + ".parquet")
-        t.io.write_all(path, Span(sink.bytes))
-        out.append(
-            data_file_from_footer(
-                written.metadata,
-                written.file_size,
-                path,
-                t.schema,
-                t.spec,
-                values[g],
-                t.sort_order_id,
-                t.options,
-            )
-        )
-    return out^
+        w.close_files()

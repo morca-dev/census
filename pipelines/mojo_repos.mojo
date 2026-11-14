@@ -31,12 +31,9 @@ run checks those first, whatever day it is for.
 
 from std.os import getenv, setenv
 
-from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
-from iceberg.nested import ColumnTree
-from iceberg.values import Datum
 from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, morca_main
 from morca.civil import now
-from morca.tables import append, ensure_table, scan, table
+from morca.tables import BatchBuilder, append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import col, i64_at, str_at, str_range
@@ -49,11 +46,10 @@ from lake import (
     CHECKED,
     CANDIDATES,
     REPOS,
+    add_str_or_null,
+    add_strs,
     checked_schema,
-    json_strings,
     repos_schema,
-    str_or_null,
-    ts,
 )
 
 
@@ -177,21 +173,22 @@ struct _Found(Copyable, Movable):
 def _repos_batch(found: List[_Found], known: Dict[String, Bool]) raises -> Tuple[RecordBatch, Int]:
     """The rows of mojo.repos for the repositories of `found` that aren't in
     `known` (each once), and how many there are."""
-    var rs = repos_schema()
-    var c_repo = ColumnBuilder.of(rs, 1)
-    var c_created = ColumnBuilder.of(rs, 2)
-    var c_first = ColumnBuilder.of(rs, 3)
-    var c_found = ColumnBuilder.of(rs, 4)
-    var c_stars = ColumnBuilder.of(rs, 5)
-    var c_forks = ColumnBuilder.of(rs, 6)
-    var c_license = ColumnBuilder.of(rs, 7)
-    var c_branch = ColumnBuilder.of(rs, 8)
-    var c_desc = ColumnBuilder.of(rs, 9)
-    var c_size = ColumnBuilder.of(rs, 10)
-    var c_lang = ColumnBuilder.of(rs, 11)
-    var c_fork = ColumnBuilder.of(rs, 12)
-    var c_topics = NestedBuilder.of(rs, 13)
-    var c_id = ColumnBuilder.of(rs, 15)
+    var b = BatchBuilder(repos_schema())
+    var c_repo = b.col("repo")
+    var c_created = b.col("created_at")
+    var c_first = b.col("first_seen")
+    var c_found = b.col("found_by")
+    var c_stars = b.col("stars")
+    var c_forks = b.col("forks")
+    var c_license = b.col("license")
+    var c_branch = b.col("default_branch")
+    var c_desc = b.col("description")
+    var c_size = b.col("size_kb")
+    var c_lang = b.col("language")
+    var c_fork = b.col("fork")
+    var c_topics = b.col("topics")
+    var c_topic = b.col("topics.element")
+    var c_id = b.col("repo_id")
     var n = 0
     var taken = Dict[String, Bool]()
     for ref f in found:
@@ -199,29 +196,25 @@ def _repos_batch(found: List[_Found], known: Dict[String, Bool]) raises -> Tuple
         if info.repo in known or info.repo in taken:
             continue
         taken[info.repo] = True
-        c_repo.add(Datum.string_(info.repo))
-        c_created.add(ts(info.created_at))
-        c_first.add(ts(f.candidate.first_seen))
-        c_found.add(Datum.string_(String(f.candidate.signals, " / ", f.how)))
-        c_stars.add(Datum.long_(info.stars))
-        c_forks.add(Datum.long_(info.forks))
-        c_license.add(str_or_null(info.license))
-        c_branch.add(str_or_null(info.default_branch))
-        c_desc.add(str_or_null(info.description))
-        c_size.add(Datum.long_(info.size_kb))
-        c_lang.add(str_or_null(info.language))
-        c_fork.add(Datum.bool_(info.fork))
-        c_topics.add(json_strings(info.topics))
-        c_id.add(Datum.long_(info.id) if info.id > 0 else Datum.none())
+        b.add_str(c_repo, info.repo)
+        b.add_int(c_created, info.created_at)
+        b.add_int(c_first, f.candidate.first_seen)
+        b.add_str(c_found, String(f.candidate.signals, " / ", f.how))
+        b.add_int(c_stars, info.stars)
+        b.add_int(c_forks, info.forks)
+        add_str_or_null(b, c_license, info.license)
+        add_str_or_null(b, c_branch, info.default_branch)
+        add_str_or_null(b, c_desc, info.description)
+        b.add_int(c_size, info.size_kb)
+        add_str_or_null(b, c_lang, info.language)
+        b.add_bool(c_fork, info.fork)
+        add_strs(b, c_topics, c_topic, info.topics)
+        if info.id > 0:
+            b.add_int(c_id, info.id)
+        else:
+            b.add_null(c_id)
         n += 1
-    # `topics` is a list column, so this table's batch is built from column
-    # trees (`NestedBuilder`), not the flat `batch_of` used for the others.
-    var trees = List[ColumnTree]()
-    for ref c in [c_repo^, c_created^, c_first^, c_found^, c_stars^, c_forks^, c_license^, c_branch^, c_desc^, c_size^, c_lang^, c_fork^]:
-        trees.append(c.build_tree())
-    trees.append(c_topics.build())
-    trees.append(c_id.build_tree())
-    return (batch_of_columns(trees^), n)
+    return (b^.build(), n)
 
 
 def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
@@ -288,14 +281,14 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     # more than one (the repository, then a pushed commit), so 25 candidates
     # keep a local run under it; a token allows 5000.
     var budget = Int(getenv("MOJO_REPOS_BUDGET", "1000" if getenv("GITHUB_TOKEN") else "25"))
-    var cs = checked_schema()
-    var k_repo = ColumnBuilder.of(cs, 1)
-    var k_at = ColumnBuilder.of(cs, 2)
-    var k_out = ColumnBuilder.of(cs, 3)
-    var k_sig = ColumnBuilder.of(cs, 4)
-    var k_how = ColumnBuilder.of(cs, 5)
-    var k_first = ColumnBuilder.of(cs, 6)
-    var k_sha = ColumnBuilder.of(cs, 7)
+    var kb = BatchBuilder(checked_schema())
+    var k_repo = kb.col("repo")
+    var k_at = kb.col("checked_at")
+    var k_out = kb.col("outcome")
+    var k_sig = kb.col("signals")
+    var k_how = kb.col("how")
+    var k_first = kb.col("first_seen")
+    var k_sha = kb.col("sha")
     var checked_now = _now_micros()
     var asked_n = 0
     var found_mojo = List[_Found]()
@@ -349,13 +342,13 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
         # waiting candidate.
         if outcome == "unchecked" and c.repo in asked and asked[c.repo].pending:
             continue  # already waiting
-        k_repo.add(Datum.string_(c.repo))
-        k_at.add(ts(checked_now))
-        k_out.add(Datum.string_(outcome))
-        k_sig.add(Datum.string_(c.signals))
-        k_how.add(str_or_null(how))
-        k_first.add(ts(c.first_seen))
-        k_sha.add(str_or_null(c.sha))
+        kb.add_str(k_repo, c.repo)
+        kb.add_int(k_at, checked_now)
+        kb.add_str(k_out, outcome)
+        kb.add_str(k_sig, c.signals)
+        add_str_or_null(kb, k_how, how)
+        kb.add_int(k_first, c.first_seen)
+        add_str_or_null(kb, k_sha, c.sha)
     var added = 0
     if len(found_mojo) > 0:
         # The checks can take many minutes, and other runs (another day's,
@@ -372,8 +365,8 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
         if added > 0:
             var id = append(ctx, repos_t, [batch[0].copy()])
             ctx.log(String(added, " Mojo repositories added, snapshot ", id))
-    if len(k_repo) > 0:
-        _ = append(ctx, checked_t, [batch_of([k_repo^, k_at^, k_out^, k_sig^, k_how^, k_first^, k_sha^])])
+    if kb.rows() > 0:
+        _ = append(ctx, checked_t, [kb^.build()])
     return added
 
 

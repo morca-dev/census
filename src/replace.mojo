@@ -13,11 +13,16 @@ commits would both keep the other's rows (morca-dev/morca#120, morca's
 replace mode, and magmalake/iceberg.mojo#83).
 """
 
-from iceberg.catalog.filesystem import Table
-from iceberg.commit import FileChanges
-from iceberg.scan import FileScanTask
 from morca import Ctx
-from morca.tables import append, commit, find_commit, write_files
+from morca.tables import (
+    FileChanges,
+    FileScanTask,
+    Table,
+    append,
+    commit,
+    find_commit,
+    write_files,
+)
 from parquet import RecordBatch
 
 
@@ -101,6 +106,6 @@ def replace_files(
     # copies of a row or with neither.
     var files = FileChanges()
     if len(some) > 0:
-        files.added_data = write_files(t, some).files.copy()
+        files.added_data = write_files(t, some)
     files.removed = removed.copy()
     return commit(ctx, t, "overwrite", files^)

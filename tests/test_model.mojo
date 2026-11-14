@@ -14,24 +14,56 @@ from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_colum
 from iceberg.nested import ColumnTree
 from iceberg.catalog.filesystem import FilesystemCatalog, Table
 from iceberg.schema import Schema
+from morca.tables import Table as LakeTable
+from iceberg.json import json_quote
+from iceberg.types import P_DATE, P_TIMESTAMPTZ
 from iceberg.values import Datum
 
 from days import days_of
 from deps import Dep, RepoDep
 from historyrows import repo_deps_batch
 from lake import (
-    commits_schema,
-    date,
-    json_strings,
-    repo_stats_schema,
-    repo_deps_schema,
-    repo_versions_schema,
-    str_or_null,
-    ts,
-    ts_or_null,
+    COMMITS_SCHEMA,
+    REPO_DEPS_SCHEMA,
+    REPO_STATS_SCHEMA,
+    REPO_VERSIONS_SCHEMA,
 )
 from model import Sources, Stored, count_days, libraries, stored_of, stored_total
 from overview import Builder, top_gains
+
+# The tables here are written with iceberg's builders, as the pipelines
+# wrote them before liblake; the model reads them through morca.tables.
+
+
+def ts(micros: Int64) -> Datum:
+    return Datum.integral(P_TIMESTAMPTZ, micros)
+
+
+def date(days: Int64) -> Datum:
+    return Datum.integral(P_DATE, days)
+
+
+def ts_or_null(micros: Int64) -> Datum:
+    if micros == 0:
+        return Datum.none()
+    return ts(micros)
+
+
+def str_or_null(s: String) -> Datum:
+    if s.byte_length() == 0:
+        return Datum.none()
+    return Datum.string_(s)
+
+
+def json_strings(items: List[String]) -> String:
+    var out = String("[")
+    for i in range(len(items)):
+        if i > 0:
+            out += ","
+        out += json_quote(items[i])
+    out += "]"
+    return out^
+
 
 comptime REPOS_NO_TOPICS = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -81,14 +113,14 @@ def test_libraries_with_head_versions() raises:
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-model-", perf_counter_ns())
     var cat = FilesystemCatalog.local(dir)
     var repos_t = cat.create_table("mojo", "repos", Schema.parse(REPOS_NO_TOPICS))
-    var commits_t = cat.create_table("mojo", "commits", commits_schema())
-    var rv_t = cat.create_table("mojo", "repo_versions", repo_versions_schema())
+    var commits_t = cat.create_table("mojo", "commits", Schema.parse(COMMITS_SCHEMA))
+    var rv_t = cat.create_table("mojo", "repo_versions", Schema.parse(REPO_VERSIONS_SCHEMA))
     var names: List[String] = ["o/locked", "o/old", "o/guess", "o/unread", "o/unpinned"]
     _ = repos_t.append([batch_of(_repos(names))])
 
     # One commit each for the first four: o/locked has a pixi lock (1.1.0);
     # o/old and o/guess have no manifest; o/unpinned has pixi with no version.
-    var cs = commits_schema()
+    var cs = Schema.parse(COMMITS_SCHEMA)
     var c = List[ColumnBuilder]()
     for i in range(9):
         c.append(ColumnBuilder.of(cs, i + 1))
@@ -112,7 +144,7 @@ def test_libraries_with_head_versions() raises:
 
     # mojo.repo_versions: o/locked says 1.0 in its README (the lock file wins),
     # o/old has a CI version, o/guess only an estimate.
-    var vs = repo_versions_schema()
+    var vs = Schema.parse(REPO_VERSIONS_SCHEMA)
     var v = List[ColumnBuilder]()
     for i in range(10):
         v.append(ColumnBuilder.of(vs, i + 1))
@@ -138,7 +170,7 @@ def test_libraries_with_head_versions() raises:
     # mojo.repo_deps: o/old names o/locked by URL (another case), o/guess by
     # the name o/locked publishes; the toolchain and a repo's own name don't
     # count.
-    var deps_t = cat.create_table("mojo", "repo_deps", repo_deps_schema())
+    var deps_t = cat.create_table("mojo", "repo_deps", Schema.parse(REPO_DEPS_SCHEMA))
     var at = _us("2026-11-05")
     var drows: List[RepoDep] = [
         RepoDep("o/locked", at, Dep("provides", "package", "locked-lib", "", "package", "pixi.toml")),
@@ -225,13 +257,13 @@ def test_duplicate_repo_rows_keep_numbers_with_names() raises:
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-dups-", perf_counter_ns())
     var cat = FilesystemCatalog.local(dir)
     var repos_t = cat.create_table("mojo", "repos", Schema.parse(REPOS_NO_TOPICS))
-    var commits_t = cat.create_table("mojo", "commits", commits_schema())
+    var commits_t = cat.create_table("mojo", "commits", Schema.parse(COMMITS_SCHEMA))
     var first: List[String] = ["o/small", "o/big"]
     _ = repos_t.append([batch_of(_repos(first, "2025-01-01", "the first row"))])
     var again: List[String] = ["o/small", "o/mid"]
     _ = repos_t.append([batch_of(_repos(again, "2025-06-01", "a later row"))])
 
-    var cs = commits_schema()
+    var cs = Schema.parse(COMMITS_SCHEMA)
     var c = List[ColumnBuilder]()
     for i in range(9):
         c.append(ColumnBuilder.of(cs, i + 1))
@@ -291,7 +323,7 @@ def test_duplicate_repo_rows_keep_numbers_with_names() raises:
 
 def _days_table(
     mut cat: FilesystemCatalog, name: String, keys: List[String]
-) raises -> Table:
+) raises -> LakeTable:
     """A table with a snapshot per entry of `keys`, each naming those
     partitions in `orca.partitions` as morca's commits do."""
     var s = Schema.parse(
@@ -303,9 +335,12 @@ def _days_table(
         var c = ColumnBuilder.of(s, 1)
         c.add(Datum.long_(1))
         _ = t.append([batch_of([c^])])
+    # Read through morca.tables, as the model reads it; the summaries are
+    # changed in its copy of the metadata only.
+    var m = LakeTable.load(t.metadata.location)
     for i in range(len(keys)):
-        t.metadata.snapshots[i].summary["orca.partitions"] = keys[i]
-    return t^
+        m.metadata.snapshots[i].summary["orca.partitions"] = keys[i]
+    return m^
 
 
 def test_days_loaded_with_and_without_the_events() raises:
@@ -316,9 +351,9 @@ def test_days_loaded_with_and_without_the_events() raises:
     var events = _days_table(cat, "events", ["2024-06-11", "2024-06-11", "2024-06-12"])
     var on_rh = _days_table(cat, "repo_hour_on", ["2024-06-11", "2024-06-12"])
     var only_events = Sources()
-    count_days(only_events, events.copy(), None)
+    count_days(only_events, Optional(events.copy()), None)
     var both = Sources()
-    count_days(both, events.copy(), on_rh^)
+    count_days(both, Optional(events.copy()), Optional(on_rh^))
     assert_equal(only_events.days, 2)
     assert_equal(both.days, only_events.days)
     assert_equal(both.first_day, only_events.first_day)
@@ -329,12 +364,12 @@ def test_days_loaded_with_and_without_the_events() raises:
         cat, "repo_hour_off", ["2024-06-11", "2024-06-12", "2024-06-13", "backfill"]
     )
     var after = Sources()
-    count_days(after, events.copy(), off_rh.copy())
+    count_days(after, Optional(events.copy()), Optional(off_rh.copy()))
     assert_equal(after.days, 3)
     assert_equal(after.first_day, "2024-06-11")
     assert_equal(after.last_day, "2024-06-13")
     var no_events = Sources()
-    count_days(no_events, None, off_rh.copy())
+    count_days(no_events, None, Optional(off_rh.copy()))
     assert_equal(no_events.days, 3)
     assert_equal(no_events.last_day, "2024-06-13")
     # The coverage counts the days up to `until` (none past it), and all of
@@ -344,7 +379,7 @@ def test_days_loaded_with_and_without_the_events() raises:
     assert_equal(after.event_days, 2)
     assert_equal(no_events.event_days, 0)
     var until = Sources()
-    count_days(until, events.copy(), off_rh^, "2024-06-12")
+    count_days(until, Optional(events.copy()), Optional(off_rh^), "2024-06-12")
     assert_equal(until.days, 3)
     assert_equal(until.archive_days, 2)
 
@@ -354,7 +389,7 @@ def test_coverage_skips_days_before_the_start() raises:
     var cat = FilesystemCatalog.local(dir)
     var rh = _days_table(cat, "repo_hour", ["2022-12-31", "2023-01-01", "2023-01-02"])
     var src = Sources()
-    count_days(src, None, rh^, "2023-01-01")
+    count_days(src, None, Optional(rh^), "2023-01-01")
     assert_equal(src.days, 3)
     assert_equal(src.archive_days, 1)
 
@@ -369,13 +404,13 @@ def test_stored_from_the_snapshot_summaries() raises:
         '{"id":1,"name":"n","required":false,"type":"long"}]}'
     )
     var t = cat.create_table("gharchive", "events", s)
-    assert_true(not stored_of("gharchive.events", t))
+    assert_true(not stored_of("gharchive.events", LakeTable.load(t.metadata.location)))
     for k in range(2):
         var c = ColumnBuilder.of(s, 1)
         for i in range(3 + k):
             c.add(Datum.long_(Int64(i)))
         _ = t.append([batch_of([c^])])
-    var got = stored_of("gharchive.events", t).value().copy()
+    var got = stored_of("gharchive.events", LakeTable.load(t.metadata.location)).value().copy()
     assert_equal(got.table, "gharchive.events")
     assert_equal(got.records, 7)
     var size = Int64(0)
@@ -384,8 +419,9 @@ def test_stored_from_the_snapshot_summaries() raises:
     assert_true(size > 0)
     assert_equal(got.bytes, size)
     # A summary without the totals counts as nothing.
-    _ = t.metadata.snapshots[len(t.metadata.snapshots) - 1].summary.pop("total-records")
-    assert_equal(stored_of("gharchive.events", t).value().records, 0)
+    var m = LakeTable.load(t.metadata.location)
+    _ = m.metadata.snapshots[len(m.metadata.snapshots) - 1].summary.pop("total-records")
+    assert_equal(stored_of("gharchive.events", m).value().records, 0)
     var all: List[Stored] = [
         Stored("gharchive.events", 100, 1000),
         Stored("gharchive.repo_hour", 20, 300),
@@ -405,7 +441,7 @@ def test_stored_from_the_snapshot_summaries() raises:
 def _stats(rows: List[Tuple[String, String, String, String, Int]]) raises -> List[ColumnTree]:
     """mojo.repo_stats rows: (repo, day, state, renamed_to, repo_id), with
     numbers and a description naming the day."""
-    var s = repo_stats_schema()
+    var s = Schema.parse(REPO_STATS_SCHEMA)
     var cs = List[ColumnBuilder]()
     for id in [1, 2, 3, 4, 5, 6, 7, 8]:
         cs.append(ColumnBuilder.of(s, id))
@@ -448,14 +484,14 @@ def test_renamed_repo_is_shown_under_its_current_name() raises:
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-renamed-", perf_counter_ns())
     var cat = FilesystemCatalog.local(dir)
     var repos_t = cat.create_table("mojo", "repos", Schema.parse(REPOS_NO_TOPICS))
-    var commits_t = cat.create_table("mojo", "commits", commits_schema())
-    var stats_t = cat.create_table("mojo", "repo_stats", repo_stats_schema())
-    var deps_t = cat.create_table("mojo", "repo_deps", repo_deps_schema())
+    var commits_t = cat.create_table("mojo", "commits", Schema.parse(COMMITS_SCHEMA))
+    var stats_t = cat.create_table("mojo", "repo_stats", Schema.parse(REPO_STATS_SCHEMA))
+    var deps_t = cat.create_table("mojo", "repo_deps", Schema.parse(REPO_DEPS_SCHEMA))
     var first: List[String] = ["o/orca.mojo", "o/user"]
     _ = repos_t.append([batch_of(_repos(first, "2025-01-01", "found"))])
     var dup: List[String] = ["neworg/morca"]
     _ = repos_t.append([batch_of(_repos(dup, "2026-11-12", "found again"))])
-    var cs = commits_schema()
+    var cs = Schema.parse(COMMITS_SCHEMA)
     var c = List[ColumnBuilder]()
     for i in range(9):
         c.append(ColumnBuilder.of(cs, i + 1))

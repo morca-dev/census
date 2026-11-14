@@ -71,6 +71,14 @@ env = { DISTA_WORKER_SLOTS = "1" }
 memory_gb = "auto"
 # With a token mojo_repos checks 1000 candidates a run, 25 without.
 secrets = { GITHUB_TOKEN = "orca/github-token" }
+# The search backfill runs as fill runs (`morca backfill --as-fill`, the
+# 185-mojo-search after-step): a month of days a run, one run at a time,
+# 02:00-08:00 UTC, after the other pipelines. keys_per_run also sizes a
+# plain backfill's runs.
+keys_per_run = 31
+fill_max_runs = 1
+fill_window = "2..8"
+priority = -10
 
 [pipelines.mojo_history]
 # Learned (morca #269), at most 4 GB, so its clones count against gharchive's grants.

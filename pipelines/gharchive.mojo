@@ -65,9 +65,8 @@ from std.time import perf_counter_ns
 from dista import ObjectRef, Task, Task2
 from morca.civil import now
 from morca import Cron, Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, morca_main
-from iceberg.catalog.filesystem import Table
-from iceberg.manifest import DataFile
-from morca.tables import ensure_table, find_commit, load_dataset
+from morca.tables import DataFiles as FileEntries
+from morca.tables import Table, ensure_table, find_commit, load_dataset
 
 from datafiles import DataFiles
 from daymerge import merge_job, merge_repo_hour
@@ -139,13 +138,13 @@ comptime GhTasks = Tasks[Hour, IndexHour, MergeHours]
 
 
 def _marker_if_empty(
-    mut files: List[DataFile], day: String, which: Int, t: Table
+    mut files: FileEntries, day: String, which: Int, t: Table
 ) raises:
     """A day with no rows for `t` at all: its commit needs a file, since a
     snapshot needs one, so it gets the marker row `hourindex.HourIndex`
     describes."""
     if len(files) == 0:
-        files = write_marker(days_of(day) * 86_400_000_000, which, t).files.copy()
+        files = write_marker(days_of(day) * 86_400_000_000, which, t)
 
 
 def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
@@ -321,7 +320,7 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
         if keep:
             try:
                 id = commit_hour(
-                    ctx, events_t.value(), i, d_ev, old, got.files.files
+                    ctx, events_t.value(), i, d_ev, old, got.files
                 )
             except e:
                 raise Error(day, " hour ", hours[i], ": committing: ", e)
@@ -359,23 +358,23 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
 
     # One commit a day to each index table, all 24 hours' files in hour order.
     var t1 = perf_counter_ns()
-    var cand = List[DataFile]()
-    var per_hour = List[DataFile]()
-    var rel = List[DataFile]()
+    var cand = FileEntries()
+    var per_hour = FileEntries()
+    var rel = FileEntries()
     for ref f in idx:
-        cand.extend(f.candidates.files.copy())
-        per_hour.extend(f.repo_hour.files.copy())
-        rel.extend(f.releases.files.copy())
+        cand.add(f.candidates)
+        per_hour.add(f.repo_hour)
+        rel.add(f.releases)
     if not indexed and len(per_hour) > 1:
         # The day's repo_hour rows as one file: a dictionary needs more rows
         # than an hour has to pay for itself.
         var paths = List[String]()
-        for ref f in per_hour:
+        for f in per_hour.files():
             paths.append(f.file_path)
         var merging = rt.remote[MergeHours](merge_job(paths))
         var merged = rt.get(merging)
         rt.release(merging)
-        per_hour = merged.repo_hour.files.copy()
+        per_hour = merged.repo_hour.copy()
         ctx.log(String(
             day, ": repo_hour merged from ", len(paths), " files to ",
             len(per_hour), " (", merged.repo_hour_rows, " rows, ",

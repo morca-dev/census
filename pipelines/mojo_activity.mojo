@@ -34,12 +34,9 @@ from std.os import getenv, setenv
 from std.time import perf_counter_ns
 
 from dista import ObjectRef, Task
-from iceberg.batch import ColumnBuilder, batch_of
-from iceberg.catalog.filesystem import Table
-from iceberg.values import Datum
 from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, morca_main
 from morca.civil import now
-from morca.tables import append, ensure_table, scan, table
+from morca.tables import BatchBuilder, Table, append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from activity import (
@@ -68,7 +65,6 @@ from lake import (
     activity_spec,
     releases_schema,
     releases_spec,
-    ts,
 )
 from names import NameRow, name_columns, name_rows, names_from
 from replace import partition_files, read_partition_files, replace_files
@@ -164,7 +160,7 @@ def _caught_up(t: Table) -> _CaughtUp:
             out.paths.append(task.data_file.file_path)
             held += task.data_file.record_count
         var read = Int64(0)
-        for b in t.scan().to_batches_for_tasks(tasks^):
+        for b in t.scan().to_batches_for_tasks(tasks):
             var ir = col(b, "repo")
             var ia = col(b, "added_at")
             var id = col(b, "days")
@@ -288,8 +284,8 @@ def activity(mut ctx: Ctx, d: Day) raises -> Int:
     var rels_t = table(ctx, GH_RELEASES)
     # Every task reads at these snapshots, so all the days of the run see the
     # same data, and a retry sees it again.
-    var pinned = scan(ctx, hours_t).snapshot().snapshot_id
-    var pinned_rels = scan(ctx, rels_t).snapshot().snapshot_id
+    var pinned = scan(ctx, hours_t).snapshot_id()
+    var pinned_rels = scan(ctx, rels_t).snapshot_id()
     var act_t = ensure_table(ctx, ACTIVITY, activity_schema(), activity_spec())
     var rel_t = ensure_table(ctx, RELEASES, releases_schema(), releases_spec())
     var cau_t = ensure_table(ctx, ACTIVITY_REPOS, activity_repos_schema())
@@ -460,21 +456,21 @@ def activity(mut ctx: Ctx, d: Day) raises -> Int:
     # with the rows it had, so the next runs read one file, not one for
     # every run that caught some up (an append if it couldn't all be read).
     if len(fresh) > 0:
-        var s = activity_repos_schema()
-        var c_repo = ColumnBuilder.of(s, 1)
-        var c_at = ColumnBuilder.of(s, 2)
-        var c_days = ColumnBuilder.of(s, 3)
+        var bb = BatchBuilder(activity_repos_schema())
+        var c_repo = bb.col("repo")
+        var c_at = bb.col("added_at")
+        var c_days = bb.col("days")
         if caught.whole:
             for i in range(len(caught.order)):
-                c_repo.add(Datum.string_(caught.order[i]))
-                c_at.add(ts(caught.added_at[i]))
-                c_days.add(Datum.long_(caught.days[i]))
+                bb.add_str(c_repo, caught.order[i])
+                bb.add_int(c_at, caught.added_at[i])
+                bb.add_int(c_days, caught.days[i])
         var at = now() * 1_000_000
         for ref r in fresh:
-            c_repo.add(Datum.string_(r))
-            c_at.add(ts(at))
-            c_days.add(Datum.long_(Int64(len(loaded))))
-        var rows = batch_of([c_repo^, c_at^, c_days^])
+            bb.add_str(c_repo, r)
+            bb.add_int(c_at, at)
+            bb.add_int(c_days, Int64(len(loaded)))
+        var rows = bb^.build()
         if caught.whole:
             _ = replace_files(ctx, cau_t, caught.paths, [rows^])
         else:

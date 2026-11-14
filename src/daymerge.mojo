@@ -11,10 +11,8 @@ that replaces them, and deletes them.
 
 from std.time import perf_counter_ns
 
-from iceberg.kernels import concat_into
-from morca.tables import FileWriter, load_dataset
-from parquet import ParquetReader, RecordBatch
-from parquet_full import AllCodecs
+from morca.tables import FileWriter, concat_batches, load_dataset
+from parquet import RecordBatch
 
 from hourindex import IndexFiles
 from lake import REPO_HOUR
@@ -35,19 +33,13 @@ def merge_job(paths: List[String]) -> String:
 
 def merged_rows(batches: List[RecordBatch]) raises -> RecordBatch:
     """`batches` as one batch, rows in the order given."""
-    var out = RecordBatch()
+    var some = List[RecordBatch]()
     for ref b in batches:
-        if b.num_rows == 0:
-            continue
-        # The first non-empty batch is copied; the rest are appended to its
-        # columns in place, so no row is copied twice.
-        if len(out.roots) == 0:
-            out = b.copy()
-            continue
-        for c in range(len(out.roots)):
-            concat_into(out.arena.nodes[out.roots[c]], b.column(c))
-        out.num_rows += b.num_rows
-    return out^
+        if b.num_rows > 0:
+            some.append(b.copy())
+    if len(some) == 0:
+        return RecordBatch()
+    return concat_batches(some)
 
 
 def merge_repo_hour(job: String) raises -> IndexFiles:
@@ -57,7 +49,7 @@ def merge_repo_hour(job: String) raises -> IndexFiles:
     file is sorted by (repo, actor, hour) and replaces them. `repo_hour` of
     the answer is that file's entry, none if the files had no rows."""
     var t0 = perf_counter_ns()
-    # Files are read back through the table's own `FileIO`, the way they were
+    # Files are read back through the table's own IO, the way they were
     # written: they are not in any snapshot yet, so a scan can't find them.
     var table = load_dataset(REPO_HOUR)
     var paths = List[String]()
@@ -65,10 +57,7 @@ def merge_repo_hour(job: String) raises -> IndexFiles:
         paths.append(String(p))
     var batches = List[RecordBatch]()
     for ref p in paths:
-        var reader = ParquetReader[AllCodecs](table.io.read_all(p))
-        var t = reader.read_table()
-        for ref b in t.batches:
-            batches.append(b.copy())
+        batches.extend(table.read_file(p))
     var out = IndexFiles()
     var all = merged_rows(batches)
     batches.clear()
@@ -86,6 +75,6 @@ def merge_repo_hour(job: String) raises -> IndexFiles:
     # merged file replaces them in the day's commit. A task that dies before
     # this point leaves them, and the step's retry builds them again.
     for ref p in paths:
-        table.io.delete(p)
+        table.delete_file(p)
     out.write_ms = Int(perf_counter_ns() - t0) // 1_000_000
     return out^

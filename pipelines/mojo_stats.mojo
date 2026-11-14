@@ -30,12 +30,9 @@ day has one row per repository however often it runs.
 
 from std.os import getenv, setenv
 
-from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
-from iceberg.nested import ColumnTree
-from iceberg.values import Datum
 from morca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, morca_main
 from morca.civil import now
-from morca.tables import append, ensure_table, scan, table
+from morca.tables import BatchBuilder, append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import bool_at, col, has_col, i32_at, i64_at, str_at, strs_at
@@ -47,14 +44,12 @@ from lake import (
     REPOS,
     REPO_DEPS,
     REPO_STATS,
-    date,
+    add_str_or_null,
+    add_strs,
+    add_ts_or_null,
     dep_forks_schema,
-    json_strings,
     repo_stats_schema,
     repo_stats_spec,
-    str_or_null,
-    ts,
-    ts_or_null,
 )
 from names import NameRow, names_from
 from replace import partition_files, replace_files
@@ -140,58 +135,64 @@ def stored_rows(b: RecordBatch) raises -> List[_Stored]:
     return out^
 
 
-def _num(v: Int64, ok: Bool) -> Datum:
+def _add_num(mut b: BatchBuilder, c: Int, v: Int64, ok: Bool) raises:
     """`v`, or null when GitHub gave no numbers for the repository (gone or
     blocked), so a missing repository isn't plotted as zero stars."""
-    return Datum.long_(v) if ok else Datum.none()
+    if ok:
+        b.add_int(c, v)
+    else:
+        b.add_null(c)
 
 
 def stats_batch(rows: List[_Stored]) raises -> RecordBatch:
-    """`rows` as a batch of `mojo.repo_stats`. `topics` is a list column, so
-    the batch is built from column trees, with the columns in schema order
-    (field ids 1-8, the topics, then 11-19; ids 9 and 10 are the topics'
-    list and element)."""
-    var s = repo_stats_schema()
-    var cs = List[ColumnBuilder]()
-    for id in [1, 2, 3, 4, 5, 6, 7, 8]:
-        cs.append(ColumnBuilder.of(s, id))
-    var topics = NestedBuilder.of(s, 9)
-    var rest = List[ColumnBuilder]()
-    for id in [11, 12, 13, 14, 15, 16, 17, 18, 19]:
-        rest.append(ColumnBuilder.of(s, id))
+    """`rows` as a batch of `mojo.repo_stats`."""
+    var b = BatchBuilder(repo_stats_schema())
+    var c_repo = b.col("repo")
+    var c_as_of = b.col("as_of")
+    var c_fetched = b.col("fetched_at")
+    var c_state = b.col("state")
+    var c_stars = b.col("stars")
+    var c_forks = b.col("forks")
+    var c_issues = b.col("open_issues")
+    var c_watchers = b.col("watchers")
+    var c_topics = b.col("topics")
+    var c_topic = b.col("topics.element")
+    var c_archived = b.col("archived")
+    var c_pushed = b.col("pushed_at")
+    var c_homepage = b.col("homepage")
+    var c_license = b.col("license")
+    var c_desc = b.col("description")
+    var c_size = b.col("size_kb")
+    var c_branch = b.col("default_branch")
+    var c_renamed = b.col("renamed_to")
+    var c_id = b.col("repo_id")
     for ref st in rows:
         ref r = st.row
         var ok = r.has_numbers()
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(date(st.as_of))
-        cs[2].add(ts(st.fetched_at))
-        cs[3].add(Datum.string_(r.state))
-        cs[4].add(_num(r.stars, ok))
-        cs[5].add(_num(r.forks, ok))
-        cs[6].add(_num(r.open_issues, ok))
-        cs[7].add(_num(r.watchers, ok))
+        b.add_str(c_repo, r.repo)
+        b.add_int(c_as_of, st.as_of)
+        b.add_int(c_fetched, st.fetched_at)
+        b.add_str(c_state, r.state)
+        _add_num(b, c_stars, r.stars, ok)
+        _add_num(b, c_forks, r.forks, ok)
+        _add_num(b, c_issues, r.open_issues, ok)
+        _add_num(b, c_watchers, r.watchers, ok)
         if ok:
-            topics.add(json_strings(r.topics))
-            rest[0].add(Datum.bool_(r.archived))
-            rest[6].add(Datum.long_(r.size_kb))
+            add_strs(b, c_topics, c_topic, r.topics)
+            b.add_bool(c_archived, r.archived)
+            b.add_int(c_size, r.size_kb)
         else:
-            topics.add_null()
-            rest[0].add(Datum.none())
-            rest[6].add(Datum.none())
-        rest[1].add(ts_or_null(r.pushed_at))
-        rest[2].add(str_or_null(r.homepage))
-        rest[3].add(str_or_null(r.license))
-        rest[4].add(str_or_null(r.description))
-        rest[5].add(str_or_null(r.default_branch))
-        rest[7].add(str_or_null(r.renamed_to))
-        rest[8].add(Datum.long_(r.repo_id) if r.repo_id > 0 else Datum.none())
-    var trees = List[ColumnTree]()
-    for ref c in cs:
-        trees.append(c.build_tree())
-    trees.append(topics.build())
-    for ref c in rest:
-        trees.append(c.build_tree())
-    return batch_of_columns(trees^)
+            b.add_null(c_topics)
+            b.add_null(c_archived)
+            b.add_null(c_size)
+        add_ts_or_null(b, c_pushed, r.pushed_at)
+        add_str_or_null(b, c_homepage, r.homepage)
+        add_str_or_null(b, c_license, r.license)
+        add_str_or_null(b, c_desc, r.description)
+        add_str_or_null(b, c_branch, r.default_branch)
+        add_str_or_null(b, c_renamed, r.renamed_to)
+        _add_num(b, c_id, r.repo_id, r.repo_id > 0)
+    return b^.build()
 
 
 @fieldwise_init
@@ -232,19 +233,24 @@ def dep_targets(census: List[String], relations: List[String], dep_repos: List[S
 
 def dep_forks_batch(rows: List[DepFork]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.dep_forks`."""
-    var s = dep_forks_schema()
-    var cs = List[ColumnBuilder]()
-    for id in range(1, 7):
-        cs.append(ColumnBuilder.of(s, id))
+    var b = BatchBuilder(dep_forks_schema())
+    var c_repo = b.col("repo")
+    var c_fetched = b.col("fetched_at")
+    var c_state = b.col("state")
+    var c_fork = b.col("fork")
+    var c_parent = b.col("parent")
+    var c_source = b.col("source")
     for ref r in rows:
-        var ok = r.state == "ok"
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(ts(r.fetched_at))
-        cs[2].add(Datum.string_(r.state))
-        cs[3].add(Datum.bool_(r.fork) if ok else Datum.none())
-        cs[4].add(str_or_null(r.parent))
-        cs[5].add(str_or_null(r.source))
-    return batch_of(cs)
+        b.add_str(c_repo, r.repo)
+        b.add_int(c_fetched, r.fetched_at)
+        b.add_str(c_state, r.state)
+        if r.state == "ok":
+            b.add_bool(c_fork, r.fork)
+        else:
+            b.add_null(c_fork)
+        add_str_or_null(b, c_parent, r.parent)
+        add_str_or_null(b, c_source, r.source)
+    return b^.build()
 
 
 def _dep_forks(mut ctx: Ctx, repos: List[String], fetched: Int64) raises -> Int:

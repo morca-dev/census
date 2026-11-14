@@ -6,7 +6,7 @@ to its source by mojo.dep_forks); and per repository its
 activity by month (mojo.activity), releases (mojo.releases) and tags
 (mojo.tags)."""
 
-from iceberg.catalog.filesystem import Table
+from morca.tables import Table
 
 from cols import bool_at, col, has_col, i32_at, i64_at, is_valid, str_at, strs_at
 from deps import ForkOf, RepoDep, resolve

@@ -4,15 +4,19 @@
 """
 
 from std.os import getenv
+from std.time import perf_counter_ns
 from dista.codec import decode, encode
 from std.testing import TestSuite, assert_equal, assert_true
 
 from datafiles import DataFiles
 from events import parse_events
+from iceberg.catalog.filesystem import FilesystemCatalog
 from iceberg.io import FileIO
-from iceberg.write import WriteOptions, write_data_files
-from lake import events_schema, events_spec
+from iceberg.schema import Schema
+from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
+from lake import EVENTS_SCHEMA
 from morca.tables import DataFiles as FileEntries
+from morca.tables import Table, write_files
 
 
 def _lines() -> List[UInt8]:
@@ -27,21 +31,32 @@ def _lines() -> List[UInt8]:
 
 
 def test_round_trip() raises:
-    var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-datafiles")
-    var io = FileIO.local()
-    var files = write_data_files(
-        io, dir, parse_events(Span(_lines())), events_schema(), events_spec(),
-        0, WriteOptions(),
+    var dir = String(
+        getenv("TMPDIR", "/tmp"), "/census-test-datafiles-", perf_counter_ns()
     )
+    # The table is made with iceberg (a step's `ensure_table` needs a run)
+    # and written through morca's tables, as a worker writes it.
+    var made = FilesystemCatalog.local(dir).create_table(
+        "t",
+        "events",
+        Schema.parse(EVENTS_SCHEMA),
+        PartitionSpec(  # lake.events_spec, as iceberg's
+            0,
+            [PartitionField.single(3, 1000, "created_day", parse_transform("day"))],
+        ),
+    )
+    var t = Table.load(made.metadata.location)
+    var entries = write_files(t, parse_events(Span(_lines())))
+    var files = entries.files()
     assert_equal(len(files), 2)  # two days, two partitions
     # The struct crosses by dista's reflection: its plain fields as they
     # are, `files` through morca's `DataFiles` Codec (iceberg's wire form).
     var sent = DataFiles()
-    sent.files = FileEntries(files.copy())
+    sent.files = entries.copy()
     sent.rows = 300
     sent.parse_ms = 7
     # The hour's index files ride along, nested.
-    sent.index.repo_hour = FileEntries(files.copy())
+    sent.index.repo_hour = entries.copy()
     sent.index.repo_hour_rows = 42
     sent.index_ms = 9
     sent.missing = True
@@ -57,28 +72,21 @@ def test_round_trip() raises:
     assert_true(back.missing)
     assert_equal(len(back.index.repo_hour), len(files))
     assert_equal(len(back.index.candidates), 0)
-    assert_equal(back.index.repo_hour.files[0].file_path, files[0].file_path)
-    ref got = back.files
+    # The entries come back byte for byte: metrics, sizes and all.
+    assert_true(back.files.bytes == entries.bytes)
+    assert_true(back.index.repo_hour.bytes == entries.bytes)
+    var got = back.files.files()
     assert_equal(len(got), len(files))
+    var io = FileIO.local()
     for k in range(len(files)):
         ref a = files[k]
-        ref b = got.files[k]
+        ref b = got[k]
         assert_equal(a.file_path, b.file_path)
         assert_equal(a.record_count, b.record_count)
         assert_equal(a.file_size_in_bytes, b.file_size_in_bytes)
         assert_equal(len(a.partition), len(b.partition))
         assert_equal(a.partition[0].i, b.partition[0].i)
-        assert_equal(Int(a.partition[0].kind), Int(b.partition[0].kind))
-        assert_equal(len(a.metrics), len(b.metrics))
-        for m in range(len(a.metrics)):
-            assert_equal(a.metrics[m].field_id, b.metrics[m].field_id)
-            assert_equal(a.metrics[m].value_count, b.metrics[m].value_count)
-            assert_true(a.metrics[m].lower_bound == b.metrics[m].lower_bound)
-            assert_true(a.metrics[m].upper_bound == b.metrics[m].upper_bound)
-        assert_equal(len(a.column_sizes), len(b.column_sizes))
-        assert_true(a.split_offsets == b.split_offsets)
-        assert_equal(a.sort_order_id, b.sort_order_id)
-        assert_equal(a.has_sort_order_id, b.has_sort_order_id)
+        assert_equal(a.partition[0].kind, b.partition[0].kind)
         io.delete(a.file_path)
 
 

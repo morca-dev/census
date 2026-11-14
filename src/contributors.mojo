@@ -11,15 +11,14 @@ into the numbers the console shows: distinct contributors in total, and
 per month the active and the new ones.
 """
 
-from iceberg.batch import ColumnBuilder, batch_of
-from iceberg.values import Datum
+from morca.tables import BatchBuilder
 from objectstore.crypto import sha256_hex
 from parquet import RecordBatch
 
 from cols import col, i32_at, i64_at, str_at
 from command import git
 from days import day_text, days_of
-from lake import contributors_schema, date, try_load
+from lake import contributors_schema, try_load
 
 
 comptime AUTHOR_FORMAT = (
@@ -266,16 +265,17 @@ def contributor_rows(b: RecordBatch) raises -> List[AuthorMonth]:
 
 def contributors_batch(rows: List[AuthorMonth]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.contributors`."""
-    var s = contributors_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(4):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(contributors_schema())
+    var repo = b.col("repo")
+    var month = b.col("month")
+    var author = b.col("author")
+    var commits = b.col("commits")
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(date(r.month))
-        cs[2].add(Datum.string_(r.author))
-        cs[3].add(Datum.long_(r.commits))
-    return batch_of(cs)
+        b.add_str(repo, r.repo)
+        b.add_int(month, r.month)
+        b.add_str(author, r.author)
+        b.add_int(commits, r.commits)
+    return b^.build()
 
 
 def read_contributors() raises -> Dict[String, RepoContributors]:

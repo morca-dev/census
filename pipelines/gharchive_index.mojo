@@ -62,7 +62,7 @@ def index_day(mut ctx: Ctx, d: Day) raises -> Int64:
         return 0
     # Every hour's task reads `gharchive.events` at this one snapshot, so
     # commits made while the day runs can't change what the tasks see.
-    var pinned = scan(ctx, events).snapshot().snapshot_id
+    var pinned = scan(ctx, events).snapshot_id()
     var props = index_properties()
     var cand_t = ensure_table(
         ctx, CANDIDATES, candidates_schema(), candidates_spec(), props
@@ -125,9 +125,9 @@ def index_day(mut ctx: Ctx, d: Day) raises -> Int64:
         # One snapshot per table and hour, so the tables' commit numbers stay
         # aligned with the hours (an hour with nothing still has a marker row).
         try:
-            _ = commit_hour(ctx, cand_t, i, d_cand, old_cand, got.candidates.files)
-            _ = commit_hour(ctx, hour_t, i, d_hour, old_hour, got.repo_hour.files)
-            _ = commit_hour(ctx, rel_t, i, d_rel, old_rel, got.releases.files)
+            _ = commit_hour(ctx, cand_t, i, d_cand, old_cand, got.candidates)
+            _ = commit_hour(ctx, hour_t, i, d_hour, old_hour, got.repo_hour)
+            _ = commit_hour(ctx, rel_t, i, d_rel, old_rel, got.releases)
         except e:
             raise Error(day, " hour ", i, ": committing: ", e)
         rows += Int64(got.repo_hour_rows)

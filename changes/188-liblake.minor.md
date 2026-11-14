@@ -1,0 +1,1 @@
+- **Every pipeline on morca-mojo 0.30.0's liblake:** the lake's iceberg and parquet code comes prebuilt with morca, so a pipeline builds faster; the mojo_repos search backfill after deploying runs as fill runs, a month a run overnight. (#188)
