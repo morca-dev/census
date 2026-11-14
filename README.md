@@ -71,8 +71,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
 - **`pipelines/gharchive_index.mojo`**: a one-off that fills those three
   tables for days loaded before gharchive wrote them, reading each hour of
   `gharchive.events` once (`morca backfill gharchive_index <days>`).
-- **`pipelines/mojo_repos.mojo`**: a sensor on `gharchive.candidates` (and
-  `mojo.repo_stats`, for renamed repositories' names). For each
+- **`pipelines/mojo_repos.mojo`**: a sensor on `gharchive.candidates`. For each
   day it reads the candidates (repository names, the `language` of repository
   objects that pull-request and fork payloads embed, commit messages
   naming `.mojo`/`.🔥` files or `mojoproject.toml`) and checks them with
@@ -80,9 +79,15 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   Mojo package, or the pushed commit's files). Mojo repositories go into
   `mojo.repos` (created, first seen, how found, stars, forks, license,
   default branch, description, size, topics); every answer goes into
-  `mojo.checked`, so a repository is asked about once. Forks are left out,
-  and so is a repository it has under another name (renamed or transferred,
-  by name or GitHub's repo id; see mojo_stats).
+  `mojo.checked`, so a repository is asked about once. GH Archive's recent
+  hours have no push or create events and no `language` in pull requests,
+  so each run also adds GitHub's search for the `language:Mojo`
+  repositories created that day (and, within a week of today, pushed
+  since), whatever their name (`detect.search_candidates`). Forks are left out,
+  and so is a repository it has under another name (renamed or
+  transferred) when its row has GitHub's `repo_id`; one found before ids
+  were recorded can be added again, and the console shows the two as one
+  (see mojo_stats).
 - **`pipelines/mojo_history.mojo`**: keyed by repository (the `repo`
   column of `mojo.repos`, `owner/name`), 50 a run, and a sensor on
   `mojo.repos`: each snapshot mojo_repos commits starts runs for the
@@ -137,7 +142,9 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   total) and "Used by" on each repo page, a Used by column in the Repos
   table and "Most depended on" on the Overview. "Used by" counts a
   repository that depends on a fork of the library (`mojo.dep_forks`, from
-  mojo_stats) as one of its dependents, and the repo page and
+  mojo_stats), or on a republish of it the census lists (`republishes()` in
+  `src/deps.mojo`, such as magmalake/flare_mlake of ehsanmok/flare), as one
+  of its dependents, and the repo page and
   `/api/repos/...` give those (`used_by_forks`) and the second degree, the
   repositories that depend on it through its dependents (`second_degree`). To fill them for the
   repositories read before (new ones get them from their first run), after

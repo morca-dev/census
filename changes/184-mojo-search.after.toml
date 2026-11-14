@@ -1,0 +1,4 @@
+[[step]]
+id = "search-discovery"
+when = "after"
+run = "morca backfill --rerun --allow-append mojo_repos 2023-01-01..2026-11-13"

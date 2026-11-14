@@ -8,9 +8,21 @@ or `.🔥` files or a `mojoproject.toml`); `verify` asks GitHub about each
 candidate: its `language`, its `pixi.toml` or `mojoproject.toml` naming a
 Mojo package, and for a push, whether the pushed commit touched `.mojo`
 files.
+
+GH Archive's recent hours carry no push or create events and pull
+requests without their repositories' `language` (a few thousand events an
+hour in 2026-11, against 150,000 with 114,000 pushes in 2025-06), so a
+repository whose name doesn't say "mojo" and that nobody forks is never a
+candidate from the events: magmalake/flare_mlake and json_mlake weren't.
+`search_candidates` adds the repositories GitHub's search gives for
+`language:Mojo` created on a day (and, for a recent day, pushed since),
+whatever their name.
 """
 
+from std.time import sleep
+
 from fetch import Reply, github, raw_file
+from morca.civil import now
 from jscan import Range, each, field, path, text, timestamp_micros
 from versions import names_mojo
 
@@ -24,7 +36,8 @@ struct Candidate(Copyable, Movable):
 
     var repo: String
     var signals: String
-    """Comma-separated: `language`, `push`, `manifest`, `description`, `name`."""
+    """Comma-separated: `language`, `search`, `push`, `manifest`,
+    `description`, `name`."""
     var first_seen: Int64
     var sha: String
     """A pushed commit that may touch `.mojo` files, for `verify`."""
@@ -50,7 +63,7 @@ struct Candidate(Copyable, Movable):
         """Lower is checked first: the strongest signs, and the cheapest.
         mojo_repos checks in this order because its GitHub budget may run out
         before the list does."""
-        if self.has("language"):
+        if self.has("language") or self.has("search"):
             return 0
         if self.has("push"):
             return 1
@@ -371,3 +384,71 @@ def verify(c: Candidate) raises -> Verdict:
         if _commit_touches_mojo(info.repo, c.sha, remaining):
             return Verdict("mojo", "push", info^, remaining)
     return Verdict("not mojo", "", info^, remaining)
+
+
+comptime SEARCH_PAGES = 10
+"""GitHub's search gives at most 1,000 results a query: 10 pages of 100."""
+
+
+def search_queries(day: String, recent: Bool) -> List[String]:
+    """The `q=` values (URL-encoded) for a day's search: the Mojo
+    repositories created that day, and for a recent day (a daily run) those
+    pushed on it or since, which finds an active repository found before
+    neither way. Forks are left out by GitHub's search."""
+    var out: List[String] = [String("language:Mojo+created:", day)]
+    if recent:
+        out.append(String("language:Mojo+pushed:%3E%3D", day))
+    return out^
+
+
+def parse_search(body: String) -> Tuple[Int, List[Candidate]]:
+    """GitHub's `GET /search/repositories` reply: `total_count`, and a
+    `search` candidate per item, first seen when it was last pushed."""
+    var b = body.as_bytes()
+    var all = Range(0, len(b))
+    var out = List[Candidate]()
+    for item in each(b, field(b, all, "items")):
+        var name = text(b, field(b, item, "full_name"))
+        if name.byte_length() == 0 or text(b, field(b, item, "fork")) == "true":
+            continue
+        out.append(Candidate(name, "search", timestamp_micros(b, field(b, item, "pushed_at")), ""))
+    return (Int(long_of(text(b, field(b, all, "total_count")))), out^)
+
+
+def _search_wait(r: Reply, attempt: Int) raises -> Int:
+    """Seconds to wait out the search API's rate limit (30 requests a
+    minute with a token, 10 without): `Retry-After`, else until
+    `X-RateLimit-Reset`, else 20 s more each attempt; at most 90."""
+    if r.retry_after >= 0:
+        return min(max(r.retry_after, 1), 90)
+    if r.reset > 0:
+        return min(max(r.reset - Int(now()) + 1, 1), 90)
+    return 20 * (attempt + 1)
+
+
+def search_candidates(day: String, recent: Bool) raises -> Tuple[List[Candidate], String]:
+    """The repositories GitHub's search says are Mojo ones for `day`
+    (`search_queries`), and a note on an answer it couldn't use ("" for
+    none). A rate limit is waited out (a backfill runs a day after another);
+    one that lasts over three waits raises, failing the run rather than
+    skipping the day's search silently."""
+    var out = List[Candidate]()
+    for ref q in search_queries(day, recent):
+        for page in range(1, SEARCH_PAGES + 1):
+            var path = String("/search/repositories?q=", q, "&per_page=100&page=", page)
+            var r = github(path)
+            var attempt = 0
+            while (r.status == 403 or r.status == 429) and attempt < 3:
+                sleep(Float64(_search_wait(r, attempt)))
+                attempt += 1
+                r = github(path)
+            if r.status == 403 or r.status == 429:
+                raise Error("GitHub search ", q, ": still rate limited (HTTP ", r.status, ")")
+            if r.status != 200:
+                return (out^, String("search ", q, " page ", page, ": HTTP ", r.status))
+            var got = parse_search(r.body)
+            var n = len(got[1])
+            out.extend(got[1].copy())
+            if n < 100 or page * 100 >= got[0]:
+                break
+    return (out^, String())
