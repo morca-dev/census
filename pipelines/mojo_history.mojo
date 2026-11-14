@@ -33,11 +33,9 @@ every repository and leaves the other tables as they are.
 from std.os import getenv, setenv
 
 from dista import ObjectRef, Seq, Task
-from iceberg.batch import ColumnBuilder, batch_of
-from iceberg.values import Datum
 from morca import Ctx, Gather, Name, Pipeline, Step, Tasks, morca_main
 from morca.keyed import Keyed
-from morca.tables import append, ensure_table, scan, table
+from morca.tables import BatchBuilder, append, ensure_table, scan, table
 
 from cols import col, i64_at, str_at
 from contributors import AuthorMonth, contributors_batch
@@ -48,13 +46,12 @@ from lake import (
     MIGRATIONS,
     REPOS,
     TAGS,
+    add_str_or_null,
+    add_ts_or_null,
     commits_schema,
     contributors_schema,
     migrations_schema,
-    str_or_null,
     tags_schema,
-    ts_or_null,
-    ts,
 )
 
 
@@ -178,39 +175,15 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
         else:
             refs.append(rt.remote[ReadHistory](repo))
     var known_commits = _commits_of(ctx, tags_only)
-    # Column builders for all three tables, filled as results arrive and
-    # appended once below: a run is one snapshot per table, however many
-    # repositories it read. (`ColumnBuilder.of(schema, n)` is the column
-    # with field id n.)
-    var ts_ = tags_schema()
-    var t_repo = ColumnBuilder.of(ts_, 1)
-    var t_tag = ColumnBuilder.of(ts_, 2)
-    var t_commit = ColumnBuilder.of(ts_, 3)
-    var t_ann = ColumnBuilder.of(ts_, 4)
-    var t_at = ColumnBuilder.of(ts_, 5)
-    var t_tool = ColumnBuilder.of(ts_, 6)
-    var t_ver = ColumnBuilder.of(ts_, 7)
-    var t_pack = ColumnBuilder.of(ts_, 8)
-
-    var cs = commits_schema()
-    var ms = migrations_schema()
-    var c_repo = ColumnBuilder.of(cs, 1)
-    var c_sha = ColumnBuilder.of(cs, 2)
-    var c_at = ColumnBuilder.of(cs, 3)
-    var c_seq = ColumnBuilder.of(cs, 4)
-    var c_lines = ColumnBuilder.of(cs, 5)
-    var c_files = ColumnBuilder.of(cs, 6)
-    var c_tool = ColumnBuilder.of(cs, 7)
-    var c_ver = ColumnBuilder.of(cs, 8)
-    var c_src = ColumnBuilder.of(cs, 9)
-    var c_pack = ColumnBuilder.of(cs, 10)
-    var c_subj = ColumnBuilder.of(cs, 11)
-    var m_repo = ColumnBuilder.of(ms, 1)
-    var m_sha = ColumnBuilder.of(ms, 2)
-    var m_at = ColumnBuilder.of(ms, 3)
-    var m_kind = ColumnBuilder.of(ms, 4)
-    var m_from = ColumnBuilder.of(ms, 5)
-    var m_to = ColumnBuilder.of(ms, 6)
+    # Batches for all three tables, filled as results arrive and appended
+    # once below: a run is one snapshot per table, however many repositories
+    # it read. (`roots` are the schema's top-level columns, in order.)
+    var tb = BatchBuilder(tags_schema())
+    var tc = tb.roots.copy()
+    var cb = BatchBuilder(commits_schema())
+    var cc = cb.roots.copy()
+    var mb = BatchBuilder(migrations_schema())
+    var mc = mb.roots.copy()
     var authors = List[AuthorMonth]()
     var failed = 0
     var first_error = String()
@@ -236,14 +209,14 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
             join_tags(tags, known_commits)
         if names[i] not in tagged:
             for ref t in tags:
-                t_repo.add(Datum.string_(t.repo))
-                t_tag.add(Datum.string_(t.tag))
-                t_commit.add(Datum.string_(t.commit))
-                t_ann.add(Datum.bool_(t.annotated))
-                t_at.add(ts_or_null(t.tagged_at))
-                t_tool.add(str_or_null(t.tooling))
-                t_ver.add(str_or_null(t.mojo_version))
-                t_pack.add(str_or_null(t.packaging))
+                tb.add_str(tc[0], t.repo)
+                tb.add_str(tc[1], t.tag)
+                tb.add_str(tc[2], t.commit)
+                tb.add_bool(tc[3], t.annotated)
+                add_ts_or_null(tb, tc[4], t.tagged_at)
+                add_str_or_null(tb, tc[5], t.tooling)
+                add_str_or_null(tb, tc[6], t.mojo_version)
+                add_str_or_null(tb, tc[7], t.packaging)
         if names[i] not in counted:
             for ref a in h.authors.items:
                 authors.append(a.copy())
@@ -262,35 +235,36 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
             last_lines, " lines of Mojo now",
         ))
         for ref c in h.commits.items:
-            c_repo.add(Datum.string_(c.repo))
-            c_sha.add(Datum.string_(c.sha))
-            c_at.add(ts(c.committed_at))
-            c_seq.add(Datum.long_(c.seq))
-            c_lines.add(Datum.long_(c.mojo_lines))
-            c_files.add(Datum.long_(c.mojo_files))
-            c_tool.add(Datum.string_(c.tooling))
-            c_ver.add(str_or_null(c.mojo_version))
-            c_src.add(str_or_null(c.version_source))
-            c_pack.add(str_or_null(c.packaging))
-            c_subj.add(str_or_null(c.subject))
+            cb.add_str(cc[0], c.repo)
+            cb.add_str(cc[1], c.sha)
+            cb.add_int(cc[2], c.committed_at)
+            cb.add_int(cc[3], c.seq)
+            cb.add_int(cc[4], c.mojo_lines)
+            cb.add_int(cc[5], c.mojo_files)
+            cb.add_str(cc[6], c.tooling)
+            add_str_or_null(cb, cc[7], c.mojo_version)
+            add_str_or_null(cb, cc[8], c.version_source)
+            add_str_or_null(cb, cc[9], c.packaging)
+            add_str_or_null(cb, cc[10], c.subject)
+            cb.add_null(cc[11])  # `changes`: mojo_retool fills it
         for ref m in h.migrations.items:
-            m_repo.add(Datum.string_(m.repo))
-            m_sha.add(Datum.string_(m.sha))
-            m_at.add(ts(m.committed_at))
-            m_kind.add(Datum.string_(m.kind))
-            m_from.add(str_or_null(m.from_value))
-            m_to.add(str_or_null(m.to_value))
+            mb.add_str(mc[0], m.repo)
+            mb.add_str(mc[1], m.sha)
+            mb.add_int(mc[2], m.committed_at)
+            mb.add_str(mc[3], m.kind)
+            add_str_or_null(mb, mc[4], m.from_value)
+            add_str_or_null(mb, mc[5], m.to_value)
     # `append` is morca's: it records the step, run and attempt in the
     # snapshot's summary, and a retry that finds its own earlier commit
     # returns it instead of appending again.
-    var n = len(c_repo)
+    var n = cb.rows()
     if n > 0:
-        _ = append(ctx, commits_t, [batch_of([c_repo^, c_sha^, c_at^, c_seq^, c_lines^, c_files^, c_tool^, c_ver^, c_src^, c_pack^, c_subj^])])
-    if len(m_repo) > 0:
-        _ = append(ctx, migrations_t, [batch_of([m_repo^, m_sha^, m_at^, m_kind^, m_from^, m_to^])])
-    var n_tags = len(t_repo)
+        _ = append(ctx, commits_t, [cb^.build()])
+    if mb.rows() > 0:
+        _ = append(ctx, migrations_t, [mb^.build()])
+    var n_tags = tb.rows()
     if n_tags > 0:
-        _ = append(ctx, tags_t, [batch_of([t_repo^, t_tag^, t_commit^, t_ann^, t_at^, t_tool^, t_ver^, t_pack^])])
+        _ = append(ctx, tags_t, [tb^.build()])
     if len(authors) > 0:
         _ = append(ctx, contributors_t, [contributors_batch(authors)])
     ctx.log(String(

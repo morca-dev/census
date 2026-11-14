@@ -1,7 +1,6 @@
 """mojo_history's rows to and from the tables (`mojo_retool` rewrites them)."""
 
-from iceberg.batch import ColumnBuilder, batch_of
-from iceberg.values import Datum
+from morca.tables import BatchBuilder
 from parquet import RecordBatch
 
 from cols import bool_at, col, has_col, i64_at, is_valid, str_at
@@ -9,20 +8,20 @@ from deps import Dep, RepoDep
 from headversion import HeadVersion
 from history import CommitRow, MigrationRow, TagRow
 from lake import (
+    add_str_or_null,
+    add_ts_or_null,
     commits_schema,
     migrations_schema,
     repo_deps_schema,
     repo_versions_schema,
-    str_or_null,
     tags_schema,
-    ts,
-    ts_or_null,
 )
 
 
 # Each table has a pair: `*_rows` reads a batch scanned from the table into
 # structs, and `*_batch` builds a batch to append or write. Column positions
-# in the builders are 1-based field ids of the schema in `lake.mojo`.
+# in the builders (`BatchBuilder.roots`) are the top-level columns of the
+# schema in `lake.mojo`, in order.
 
 
 def commit_rows(b: RecordBatch) raises -> List[CommitRow]:
@@ -60,24 +59,22 @@ def commit_rows(b: RecordBatch) raises -> List[CommitRow]:
 
 def commits_batch(rows: List[CommitRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.commits`."""
-    var s = commits_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(12):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(commits_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(Datum.string_(r.sha))
-        cs[2].add(ts(r.committed_at))
-        cs[3].add(Datum.long_(r.seq))
-        cs[4].add(Datum.long_(r.mojo_lines))
-        cs[5].add(Datum.long_(r.mojo_files))
-        cs[6].add(Datum.string_(r.tooling))
-        cs[7].add(str_or_null(r.mojo_version))
-        cs[8].add(str_or_null(r.version_source))
-        cs[9].add(str_or_null(r.packaging))
-        cs[10].add(str_or_null(r.subject))
-        cs[11].add(str_or_null(r.changes))
-    return batch_of(cs)
+        b.add_str(cs[0], r.repo)
+        b.add_str(cs[1], r.sha)
+        b.add_int(cs[2], r.committed_at)
+        b.add_int(cs[3], r.seq)
+        b.add_int(cs[4], r.mojo_lines)
+        b.add_int(cs[5], r.mojo_files)
+        b.add_str(cs[6], r.tooling)
+        add_str_or_null(b, cs[7], r.mojo_version)
+        add_str_or_null(b, cs[8], r.version_source)
+        add_str_or_null(b, cs[9], r.packaging)
+        add_str_or_null(b, cs[10], r.subject)
+        add_str_or_null(b, cs[11], r.changes)
+    return b^.build()
 
 
 def migration_rows(b: RecordBatch) raises -> List[MigrationRow]:
@@ -102,18 +99,16 @@ def migration_rows(b: RecordBatch) raises -> List[MigrationRow]:
 
 def migrations_batch(rows: List[MigrationRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.migrations`."""
-    var s = migrations_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(6):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(migrations_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(Datum.string_(r.sha))
-        cs[2].add(ts(r.committed_at))
-        cs[3].add(Datum.string_(r.kind))
-        cs[4].add(str_or_null(r.from_value))
-        cs[5].add(str_or_null(r.to_value))
-    return batch_of(cs)
+        b.add_str(cs[0], r.repo)
+        b.add_str(cs[1], r.sha)
+        b.add_int(cs[2], r.committed_at)
+        b.add_str(cs[3], r.kind)
+        add_str_or_null(b, cs[4], r.from_value)
+        add_str_or_null(b, cs[5], r.to_value)
+    return b^.build()
 
 
 def tag_rows(b: RecordBatch) raises -> List[TagRow]:
@@ -144,20 +139,18 @@ def tag_rows(b: RecordBatch) raises -> List[TagRow]:
 
 def tags_batch(rows: List[TagRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.tags`."""
-    var s = tags_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(8):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(tags_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(Datum.string_(r.tag))
-        cs[2].add(Datum.string_(r.commit))
-        cs[3].add(Datum.bool_(r.annotated))
-        cs[4].add(ts_or_null(r.tagged_at))
-        cs[5].add(str_or_null(r.tooling))
-        cs[6].add(str_or_null(r.mojo_version))
-        cs[7].add(str_or_null(r.packaging))
-    return batch_of(cs)
+        b.add_str(cs[0], r.repo)
+        b.add_str(cs[1], r.tag)
+        b.add_str(cs[2], r.commit)
+        b.add_bool(cs[3], r.annotated)
+        add_ts_or_null(b, cs[4], r.tagged_at)
+        add_str_or_null(b, cs[5], r.tooling)
+        add_str_or_null(b, cs[6], r.mojo_version)
+        add_str_or_null(b, cs[7], r.packaging)
+    return b^.build()
 
 
 def head_version_rows(b: RecordBatch) raises -> List[HeadVersion]:
@@ -191,22 +184,23 @@ def head_version_rows(b: RecordBatch) raises -> List[HeadVersion]:
 
 def head_versions_batch(rows: List[HeadVersion]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.repo_versions`."""
-    var s = repo_versions_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(10):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(repo_versions_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(ts(r.read_at))
-        cs[2].add(str_or_null(r.head_sha))
-        cs[3].add(str_or_null(r.version))
-        cs[4].add(str_or_null(r.source))
-        cs[5].add(str_or_null(r.file))
-        cs[6].add(str_or_null(r.estimate))
-        cs[7].add(str_or_null(r.estimate_source))
-        cs[8].add(ts_or_null(r.last_mojo_commit))
-        cs[9].add(Datum.long_(r.declared_deps) if r.declared_deps >= 0 else Datum.none())
-    return batch_of(cs)
+        b.add_str(cs[0], r.repo)
+        b.add_int(cs[1], r.read_at)
+        add_str_or_null(b, cs[2], r.head_sha)
+        add_str_or_null(b, cs[3], r.version)
+        add_str_or_null(b, cs[4], r.source)
+        add_str_or_null(b, cs[5], r.file)
+        add_str_or_null(b, cs[6], r.estimate)
+        add_str_or_null(b, cs[7], r.estimate_source)
+        add_ts_or_null(b, cs[8], r.last_mojo_commit)
+        if r.declared_deps >= 0:
+            b.add_int(cs[9], r.declared_deps)
+        else:
+            b.add_null(cs[9])
+    return b^.build()
 
 
 def repo_dep_rows(b: RecordBatch) raises -> List[RepoDep]:
@@ -233,17 +227,15 @@ def repo_dep_rows(b: RecordBatch) raises -> List[RepoDep]:
 
 def repo_deps_batch(rows: List[RepoDep]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.repo_deps`."""
-    var s = repo_deps_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(8):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(repo_deps_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(ts(r.read_at))
-        cs[2].add(Datum.string_(r.dep.relation))
-        cs[3].add(Datum.string_(r.dep.kind))
-        cs[4].add(Datum.string_(r.dep.name))
-        cs[5].add(str_or_null(r.dep.dep_repo))
-        cs[6].add(str_or_null(r.dep.section))
-        cs[7].add(Datum.string_(r.dep.file))
-    return batch_of(cs)
+        b.add_str(cs[0], r.repo)
+        b.add_int(cs[1], r.read_at)
+        b.add_str(cs[2], r.dep.relation)
+        b.add_str(cs[3], r.dep.kind)
+        b.add_str(cs[4], r.dep.name)
+        add_str_or_null(b, cs[5], r.dep.dep_repo)
+        add_str_or_null(b, cs[6], r.dep.section)
+        b.add_str(cs[7], r.dep.file)
+    return b^.build()

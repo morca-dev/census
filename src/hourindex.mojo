@@ -17,11 +17,9 @@ per hour):
 
 from std.time import perf_counter_ns
 
-from iceberg.batch import ColumnBuilder, batch_of
-from iceberg.catalog.filesystem import Table
-from iceberg.values import Datum
+from morca.tables import BatchBuilder
 from morca.tables import DataFiles as FileEntries
-from morca.tables import FileWriter
+from morca.tables import FileWriter, Table
 from parquet import RecordBatch
 
 from activity import parse_release
@@ -29,12 +27,11 @@ from cols import col, i64_at, str_at
 from detect import Candidate, note, scan_event
 from jscan import Range, field, text
 from lake import (
+    add_str_or_null,
+    add_ts_or_null,
     candidates_schema,
     gh_releases_schema,
     repo_hour_schema,
-    str_or_null,
-    ts,
-    ts_or_null,
 )
 
 comptime HOUR_MICROS: Int64 = 3_600_000_000
@@ -163,28 +160,24 @@ struct HourIndex(Movable):
 
     def candidate_batch(self) raises -> RecordBatch:
         """One row per (repository, hour, reason)."""
-        var s = candidates_schema()
-        var c_repo = ColumnBuilder.of(s, 1)
-        var c_hour = ColumnBuilder.of(s, 2)
-        var c_reason = ColumnBuilder.of(s, 3)
-        var c_seen = ColumnBuilder.of(s, 4)
-        var c_sha = ColumnBuilder.of(s, 5)
+        var b = BatchBuilder(candidates_schema())
+        var cs = b.roots.copy()
         for e in self.found.items():
             ref c = e.value
             var hour = c.first_seen - c.first_seen % HOUR_MICROS
             for reason in c.signals.split(","):
-                c_repo.add(Datum.string_(c.repo))
-                c_hour.add(ts(hour))
-                c_reason.add(Datum.string_(String(reason)))
-                c_seen.add(ts(c.first_seen))
-                c_sha.add(str_or_null(c.sha))
-        if len(c_repo) == 0 and self.marker > 0:
-            c_repo.add(Datum.string_(""))
-            c_hour.add(ts(self.marker))
-            c_reason.add(Datum.string_("hour"))
-            c_seen.add(ts(self.marker))
-            c_sha.add(Datum.none())
-        return batch_of([c_repo^, c_hour^, c_reason^, c_seen^, c_sha^])
+                b.add_str(cs[0], c.repo)
+                b.add_int(cs[1], hour)
+                b.add_str(cs[2], String(reason))
+                b.add_int(cs[3], c.first_seen)
+                add_str_or_null(b, cs[4], c.sha)
+        if b.rows() == 0 and self.marker > 0:
+            b.add_str(cs[0], "")
+            b.add_int(cs[1], self.marker)
+            b.add_str(cs[2], "hour")
+            b.add_int(cs[3], self.marker)
+            b.add_null(cs[4])
+        return b^.build()
 
     def repo_hour_batch(self) raises -> RecordBatch:
         """The cells sorted by (repository, actor, hour)."""
@@ -192,53 +185,49 @@ struct HourIndex(Movable):
         for e in self.at.items():
             keys.append(e.key)
         sort(keys)
-        var s = repo_hour_schema()
-        var cs = List[ColumnBuilder]()
-        for i in range(10):
-            cs.append(ColumnBuilder.of(s, i + 1))
+        var b = BatchBuilder(repo_hour_schema())
+        var cs = b.roots.copy()
         for ref k in keys:
             ref c = self.cells[self.at[k]]
-            cs[0].add(Datum.string_(c.repo))
-            cs[1].add(ts(c.hour))
-            cs[2].add(str_or_null(c.actor))
-            cs[3].add(Datum.long_(c.events))
-            cs[4].add(Datum.long_(c.stars))
-            cs[5].add(Datum.long_(c.forks))
-            cs[6].add(Datum.long_(c.releases))
-            cs[7].add(Datum.long_(c.issues_opened))
-            cs[8].add(Datum.long_(c.prs_opened))
-            cs[9].add(Datum.long_(c.pushes))
+            b.add_str(cs[0], c.repo)
+            b.add_int(cs[1], c.hour)
+            add_str_or_null(b, cs[2], c.actor)
+            b.add_int(cs[3], c.events)
+            b.add_int(cs[4], c.stars)
+            b.add_int(cs[5], c.forks)
+            b.add_int(cs[6], c.releases)
+            b.add_int(cs[7], c.issues_opened)
+            b.add_int(cs[8], c.prs_opened)
+            b.add_int(cs[9], c.pushes)
         if len(keys) == 0 and self.marker > 0:
-            cs[0].add(Datum.string_(""))
-            cs[1].add(ts(self.marker))
-            cs[2].add(Datum.none())
+            b.add_str(cs[0], "")
+            b.add_int(cs[1], self.marker)
+            b.add_null(cs[2])
             for i in range(3, 10):
-                cs[i].add(Datum.long_(0))
-        return batch_of(cs)
+                b.add_int(cs[i], 0)
+        return b^.build()
 
     def releases_batch(self) raises -> RecordBatch:
         """One row per published ReleaseEvent, in the order seen."""
-        var s = gh_releases_schema()
-        var cs = List[ColumnBuilder]()
-        for i in range(7):
-            cs.append(ColumnBuilder.of(s, i + 1))
+        var b = BatchBuilder(gh_releases_schema())
+        var cs = b.roots.copy()
         for ref r in self.releases:
-            cs[0].add(Datum.string_(r.repo))
-            cs[1].add(ts(r.at))
-            cs[2].add(str_or_null(r.actor))
-            cs[3].add(Datum.string_(r.tag))
-            cs[4].add(str_or_null(r.name))
-            cs[5].add(ts_or_null(r.published_at))
-            cs[6].add(Datum.bool_(r.prerelease))
+            b.add_str(cs[0], r.repo)
+            b.add_int(cs[1], r.at)
+            add_str_or_null(b, cs[2], r.actor)
+            b.add_str(cs[3], r.tag)
+            add_str_or_null(b, cs[4], r.name)
+            add_ts_or_null(b, cs[5], r.published_at)
+            b.add_bool(cs[6], r.prerelease)
         if len(self.releases) == 0 and self.marker > 0:
-            cs[0].add(Datum.string_(""))
-            cs[1].add(ts(self.marker))
-            cs[2].add(Datum.none())
-            cs[3].add(Datum.string_(""))
-            cs[4].add(Datum.none())
-            cs[5].add(Datum.none())
-            cs[6].add(Datum.bool_(False))
-        return batch_of(cs)
+            b.add_str(cs[0], "")
+            b.add_int(cs[1], self.marker)
+            b.add_null(cs[2])
+            b.add_str(cs[3], "")
+            b.add_null(cs[4])
+            b.add_null(cs[5])
+            b.add_bool(cs[6], False)
+        return b^.build()
 
 
 struct IndexFiles(Copyable, Movable):

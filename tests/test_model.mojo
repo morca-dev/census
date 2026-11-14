@@ -20,12 +20,12 @@ from days import days_of
 from deps import Dep, RepoDep
 from historyrows import repo_deps_batch
 from lake import (
-    commits_schema,
+    COMMITS_SCHEMA,
+    REPO_DEPS_SCHEMA,
+    REPO_STATS_SCHEMA,
+    REPO_VERSIONS_SCHEMA,
     date,
     json_strings,
-    repo_stats_schema,
-    repo_deps_schema,
-    repo_versions_schema,
     str_or_null,
     ts,
     ts_or_null,
@@ -81,14 +81,14 @@ def test_libraries_with_head_versions() raises:
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-model-", perf_counter_ns())
     var cat = FilesystemCatalog.local(dir)
     var repos_t = cat.create_table("mojo", "repos", Schema.parse(REPOS_NO_TOPICS))
-    var commits_t = cat.create_table("mojo", "commits", commits_schema())
-    var rv_t = cat.create_table("mojo", "repo_versions", repo_versions_schema())
+    var commits_t = cat.create_table("mojo", "commits", Schema.parse(COMMITS_SCHEMA))
+    var rv_t = cat.create_table("mojo", "repo_versions", Schema.parse(REPO_VERSIONS_SCHEMA))
     var names: List[String] = ["o/locked", "o/old", "o/guess", "o/unread", "o/unpinned"]
     _ = repos_t.append([batch_of(_repos(names))])
 
     # One commit each for the first four: o/locked has a pixi lock (1.1.0);
     # o/old and o/guess have no manifest; o/unpinned has pixi with no version.
-    var cs = commits_schema()
+    var cs = Schema.parse(COMMITS_SCHEMA)
     var c = List[ColumnBuilder]()
     for i in range(9):
         c.append(ColumnBuilder.of(cs, i + 1))
@@ -112,7 +112,7 @@ def test_libraries_with_head_versions() raises:
 
     # mojo.repo_versions: o/locked says 1.0 in its README (the lock file wins),
     # o/old has a CI version, o/guess only an estimate.
-    var vs = repo_versions_schema()
+    var vs = Schema.parse(REPO_VERSIONS_SCHEMA)
     var v = List[ColumnBuilder]()
     for i in range(10):
         v.append(ColumnBuilder.of(vs, i + 1))
@@ -138,7 +138,7 @@ def test_libraries_with_head_versions() raises:
     # mojo.repo_deps: o/old names o/locked by URL (another case), o/guess by
     # the name o/locked publishes; the toolchain and a repo's own name don't
     # count.
-    var deps_t = cat.create_table("mojo", "repo_deps", repo_deps_schema())
+    var deps_t = cat.create_table("mojo", "repo_deps", Schema.parse(REPO_DEPS_SCHEMA))
     var at = _us("2026-11-05")
     var drows: List[RepoDep] = [
         RepoDep("o/locked", at, Dep("provides", "package", "locked-lib", "", "package", "pixi.toml")),
@@ -225,13 +225,13 @@ def test_duplicate_repo_rows_keep_numbers_with_names() raises:
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-dups-", perf_counter_ns())
     var cat = FilesystemCatalog.local(dir)
     var repos_t = cat.create_table("mojo", "repos", Schema.parse(REPOS_NO_TOPICS))
-    var commits_t = cat.create_table("mojo", "commits", commits_schema())
+    var commits_t = cat.create_table("mojo", "commits", Schema.parse(COMMITS_SCHEMA))
     var first: List[String] = ["o/small", "o/big"]
     _ = repos_t.append([batch_of(_repos(first, "2025-01-01", "the first row"))])
     var again: List[String] = ["o/small", "o/mid"]
     _ = repos_t.append([batch_of(_repos(again, "2025-06-01", "a later row"))])
 
-    var cs = commits_schema()
+    var cs = Schema.parse(COMMITS_SCHEMA)
     var c = List[ColumnBuilder]()
     for i in range(9):
         c.append(ColumnBuilder.of(cs, i + 1))
@@ -405,7 +405,7 @@ def test_stored_from_the_snapshot_summaries() raises:
 def _stats(rows: List[Tuple[String, String, String, String, Int]]) raises -> List[ColumnTree]:
     """mojo.repo_stats rows: (repo, day, state, renamed_to, repo_id), with
     numbers and a description naming the day."""
-    var s = repo_stats_schema()
+    var s = Schema.parse(REPO_STATS_SCHEMA)
     var cs = List[ColumnBuilder]()
     for id in [1, 2, 3, 4, 5, 6, 7, 8]:
         cs.append(ColumnBuilder.of(s, id))
@@ -448,14 +448,14 @@ def test_renamed_repo_is_shown_under_its_current_name() raises:
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-renamed-", perf_counter_ns())
     var cat = FilesystemCatalog.local(dir)
     var repos_t = cat.create_table("mojo", "repos", Schema.parse(REPOS_NO_TOPICS))
-    var commits_t = cat.create_table("mojo", "commits", commits_schema())
-    var stats_t = cat.create_table("mojo", "repo_stats", repo_stats_schema())
-    var deps_t = cat.create_table("mojo", "repo_deps", repo_deps_schema())
+    var commits_t = cat.create_table("mojo", "commits", Schema.parse(COMMITS_SCHEMA))
+    var stats_t = cat.create_table("mojo", "repo_stats", Schema.parse(REPO_STATS_SCHEMA))
+    var deps_t = cat.create_table("mojo", "repo_deps", Schema.parse(REPO_DEPS_SCHEMA))
     var first: List[String] = ["o/orca.mojo", "o/user"]
     _ = repos_t.append([batch_of(_repos(first, "2025-01-01", "found"))])
     var dup: List[String] = ["neworg/morca"]
     _ = repos_t.append([batch_of(_repos(dup, "2026-11-12", "found again"))])
-    var cs = commits_schema()
+    var cs = Schema.parse(COMMITS_SCHEMA)
     var c = List[ColumnBuilder]()
     for i in range(9):
         c.append(ColumnBuilder.of(cs, i + 1))

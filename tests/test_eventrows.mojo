@@ -13,6 +13,8 @@ from std.testing import TestSuite, assert_equal, assert_true
 
 from iceberg.io import FileIO
 from iceberg.manifest import DataFile
+from iceberg.schema import Schema
+from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
 from iceberg.write import WriteOptions, write_data_files
 from parquet import ParquetReader, RecordBatch
 from parquet_full import AllCodecs
@@ -27,9 +29,23 @@ from eventrows import (
     write_event_files,
 )
 from events import EventParser
-from lake import events_properties, events_schema, events_spec
+from lake import EVENTS_SCHEMA, events_properties
 from sortrows import order_by_text, sorted_by_text
 
+
+
+def events_schema() raises -> Schema:
+    """gharchive.events' schema as iceberg's, which the events writer
+    (`eventrows`) and `write_data_files` take."""
+    return Schema.parse(EVENTS_SCHEMA)
+
+
+def events_spec() raises -> PartitionSpec:
+    """`lake.events_spec`, as iceberg's."""
+    return PartitionSpec(
+        0,
+        [PartitionField.single(3, 1000, "created_day", parse_transform("day"))],
+    )
 
 def _lines(n: Int) -> List[UInt8]:
     """Events over two days, with escapes, null actors, missing and

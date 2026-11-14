@@ -12,10 +12,8 @@ counting (`hourindex.HourIndex.add` does the same per hour, and
 from std.time import perf_counter_ns
 
 from dista import Seq
-from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.json import json_quote
-from iceberg.values import Datum
-from morca.tables import load_dataset
+from morca.tables import BatchBuilder, load_dataset
 from parquet import RecordBatch
 
 from cols import bool_at, col, i32_at, i64_at, str_at, str_range
@@ -25,10 +23,9 @@ from lake import (
     GH_RELEASES,
     REPO_HOUR,
     activity_schema,
-    date,
+    add_str_or_null,
+    add_ts_or_null,
     releases_schema,
-    str_or_null,
-    ts_or_null,
 )
 
 
@@ -367,22 +364,20 @@ def activity_rows(b: RecordBatch) raises -> List[ActivityRow]:
 
 def activity_batch(rows: List[ActivityRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.activity`."""
-    var s = activity_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(10):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(activity_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(date(r.day))
-        cs[2].add(Datum.long_(r.events))
-        cs[3].add(Datum.long_(r.stars))
-        cs[4].add(Datum.long_(r.forks))
-        cs[5].add(Datum.long_(r.releases))
-        cs[6].add(Datum.long_(r.issues_opened))
-        cs[7].add(Datum.long_(r.prs_opened))
-        cs[8].add(Datum.long_(r.pushes))
-        cs[9].add(Datum.long_(r.actors))
-    return batch_of(cs)
+        b.add_str(cs[0], r.repo)
+        b.add_int(cs[1], r.day)
+        b.add_int(cs[2], r.events)
+        b.add_int(cs[3], r.stars)
+        b.add_int(cs[4], r.forks)
+        b.add_int(cs[5], r.releases)
+        b.add_int(cs[6], r.issues_opened)
+        b.add_int(cs[7], r.prs_opened)
+        b.add_int(cs[8], r.pushes)
+        b.add_int(cs[9], r.actors)
+    return b^.build()
 
 
 def release_rows(b: RecordBatch) raises -> List[ReleaseRow]:
@@ -408,16 +403,14 @@ def release_rows(b: RecordBatch) raises -> List[ReleaseRow]:
 
 def releases_batch(rows: List[ReleaseRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.releases`."""
-    var s = releases_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(7):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(releases_schema())
+    var cs = b.roots.copy()
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(date(r.day))
-        cs[2].add(Datum.string_(r.tag))
-        cs[3].add(str_or_null(r.name))
-        cs[4].add(ts_or_null(r.published_at))
-        cs[5].add(Datum.bool_(r.prerelease))
-        cs[6].add(str_or_null(r.actor))
-    return batch_of(cs)
+        b.add_str(cs[0], r.repo)
+        b.add_int(cs[1], r.day)
+        b.add_str(cs[2], r.tag)
+        add_str_or_null(b, cs[3], r.name)
+        add_ts_or_null(b, cs[4], r.published_at)
+        b.add_bool(cs[5], r.prerelease)
+        add_str_or_null(b, cs[6], r.actor)
+    return b^.build()

@@ -7,7 +7,10 @@ from std.os import getenv
 from std.time import perf_counter_ns
 from std.testing import TestSuite, assert_equal, assert_true
 
-from iceberg.catalog.filesystem import FilesystemCatalog, Table
+from iceberg.catalog.filesystem import FilesystemCatalog
+from iceberg.schema import Schema
+from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
+from morca.tables import Table
 
 from cols import str_at
 from activity import Acc, ReleaseRow, add_event, finish, fold_hours
@@ -15,14 +18,7 @@ from days import days_of
 from detect import Candidate, scan_event
 from events import EventParser
 from hourindex import HourIndex, candidates_from, write_marker
-from lake import (
-    candidates_schema,
-    candidates_spec,
-    gh_releases_schema,
-    gh_releases_spec,
-    repo_hour_schema,
-    repo_hour_spec,
-)
+from lake import CANDIDATES_SCHEMA, GH_RELEASES_SCHEMA, REPO_HOUR_SCHEMA
 from jscan import Range, field, scan_event as scan_line, text, timestamp_micros
 
 
@@ -170,14 +166,21 @@ def test_no_marker_without_a_day() raises:
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-marker-", perf_counter_ns())
     var cat = FilesystemCatalog.local(dir)
     var day = days_of("2024-06-12") * 86_400_000_000
+    # Made with iceberg (a step's `ensure_table` needs a run), written
+    # through morca's tables.
+    var schemas: List[String] = [CANDIDATES_SCHEMA, REPO_HOUR_SCHEMA, GH_RELEASES_SCHEMA]
+    var names: List[String] = ["c", "h", "r"]
     var tables = List[Table]()
-    tables.append(cat.create_table("t", "c", candidates_schema(), candidates_spec()))
-    tables.append(cat.create_table("t", "h", repo_hour_schema(), repo_hour_spec()))
-    tables.append(cat.create_table("t", "r", gh_releases_schema(), gh_releases_spec()))
+    for k in range(3):
+        var spec = PartitionSpec(
+            0, [PartitionField.single(2, 1000, "day", parse_transform("day"))]
+        )
+        var t = cat.create_table("t", names[k], Schema.parse(schemas[k]), spec)
+        tables.append(Table.load(t.metadata.location))
     for which in range(3):
         var files = write_marker(day, which, tables[which])
         assert_equal(len(files), 1)
-        assert_equal(files.files[0].record_count, 1)
+        assert_equal(files.files()[0].record_count, 1)
 
 
 def main() raises:

@@ -37,7 +37,7 @@ from parquet import ListSink, ParquetWriter, RecordBatch, WriterOptions
 from parquet.arrow import ArrayData
 from parquet_full import AllCodecs
 
-from lake import events_schema, ts
+from lake import EVENTS_SCHEMA, ts
 
 comptime CHUNK_BYTES = 1 << 22
 """A string column grows a 4 MB piece at a time (a longer value gets a piece
@@ -219,7 +219,7 @@ struct EventRows(Movable, Sized):
     var payload: TextColumn
 
     def __init__(out self) raises:
-        var s = events_schema()
+        var s = Schema.parse(EVENTS_SCHEMA)  # iceberg's, for its builders
         self.id = LongColumn(s, 1)
         self.type = TextColumn(s, 2)
         self.created = LongColumn(s, 3)

@@ -13,11 +13,17 @@ commits would both keep the other's rows (morca-dev/morca#120, morca's
 replace mode, and magmalake/iceberg.mojo#83).
 """
 
-from iceberg.catalog.filesystem import Table
-from iceberg.commit import FileChanges
+from iceberg.catalog.filesystem import Table as IcebergTable
 from iceberg.scan import FileScanTask
 from morca import Ctx
-from morca.tables import append, commit, find_commit, write_files
+from morca.tables import (
+    FileChanges,
+    Table,
+    append,
+    commit,
+    find_commit,
+    write_files,
+)
 from parquet import RecordBatch
 
 
@@ -34,7 +40,7 @@ struct PartitionFiles(Copyable, Movable):
 
 
 def partition_files(
-    t: Table, partitions: Dict[Int, Bool], filter: String = '["true"]'
+    t: IcebergTable, partitions: Dict[Int, Bool], filter: String = '["true"]'
 ) raises -> PartitionFiles:
     """The current snapshot's data files whose first partition value is one
     of `partitions`, and how many rows they hold. `filter`, a row filter the
@@ -58,7 +64,7 @@ def partition_files(
 
 
 def read_partition_files(
-    t: Table, files: PartitionFiles, filter: String = '["true"]'
+    t: IcebergTable, files: PartitionFiles, filter: String = '["true"]'
 ) raises -> List[RecordBatch]:
     """The rows of the files `partition_files` found, read from its planned
     tasks: only those files, without planning the table again. `filter` is
@@ -101,6 +107,6 @@ def replace_files(
     # copies of a row or with neither.
     var files = FileChanges()
     if len(some) > 0:
-        files.added_data = write_files(t, some).files.copy()
+        files.added_data = write_files(t, some)
     files.removed = removed.copy()
     return commit(ctx, t, "overwrite", files^)

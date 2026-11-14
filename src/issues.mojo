@@ -8,16 +8,20 @@ limits as mojo_stats does (`stats.limited`, `stats.wait_seconds`).
 
 from std.time import sleep
 
-from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of_columns
-from iceberg.nested import ColumnTree
-from iceberg.values import Datum
+from morca.tables import BatchBuilder
 from parquet import RecordBatch
 
 from cols import col, i64_at, str_at, strs_at
 from detect import long_of
 from fetch import github
 from jscan import Range, each, field, micros_to_iso, text, timestamp_micros
-from lake import issues_schema, json_strings, str_or_null, try_load, ts, ts_or_null
+from lake import (
+    add_str_or_null,
+    add_strs,
+    add_ts_or_null,
+    issues_schema,
+    try_load,
+)
 from morca.civil import now
 from overview import BASE_MONTH, DAY_US, Overview, month_of_days
 from stats import limited, state_of, wait_seconds
@@ -186,37 +190,25 @@ def issue_rows(b: RecordBatch) raises -> List[IssueRow]:
 
 
 def issues_batch(rows: List[IssueRow]) raises -> RecordBatch:
-    """`rows` as a batch of `mojo.issues`, columns in schema order (ids 1-5,
-    the labels, then 8-14; 6 and 7 are the labels' list and element)."""
-    var s = issues_schema()
-    var cs = List[ColumnBuilder]()
-    for id in [1, 2, 3, 4, 5]:
-        cs.append(ColumnBuilder.of(s, id))
-    var labels = NestedBuilder.of(s, 6)
-    var rest = List[ColumnBuilder]()
-    for id in [8, 9, 10, 11, 12, 13, 14]:
-        rest.append(ColumnBuilder.of(s, id))
+    """`rows` as a batch of `mojo.issues`."""
+    var b = BatchBuilder(issues_schema())
+    var cs = b.roots.copy()  # repo ... fetched_at, the labels at 5
+    var label = b.col("labels.element")
     for ref r in rows:
-        cs[0].add(Datum.string_(r.repo))
-        cs[1].add(Datum.long_(r.number))
-        cs[2].add(Datum.string_(r.kind))
-        cs[3].add(Datum.string_(r.state))
-        cs[4].add(Datum.string_(r.title))
-        labels.add(json_strings(r.labels))
-        rest[0].add(str_or_null(r.author))
-        rest[1].add(Datum.long_(r.comments))
-        rest[2].add(ts(r.created_at))
-        rest[3].add(ts(r.updated_at))
-        rest[4].add(ts_or_null(r.closed_at))
-        rest[5].add(ts_or_null(r.merged_at))
-        rest[6].add(ts(r.fetched_at))
-    var trees = List[ColumnTree]()
-    for ref c in cs:
-        trees.append(c.build_tree())
-    trees.append(labels.build())
-    for ref c in rest:
-        trees.append(c.build_tree())
-    return batch_of_columns(trees^)
+        b.add_str(cs[0], r.repo)
+        b.add_int(cs[1], r.number)
+        b.add_str(cs[2], r.kind)
+        b.add_str(cs[3], r.state)
+        b.add_str(cs[4], r.title)
+        add_strs(b, cs[5], label, r.labels)
+        add_str_or_null(b, cs[6], r.author)
+        b.add_int(cs[7], r.comments)
+        b.add_int(cs[8], r.created_at)
+        b.add_int(cs[9], r.updated_at)
+        add_ts_or_null(b, cs[10], r.closed_at)
+        add_ts_or_null(b, cs[11], r.merged_at)
+        b.add_int(cs[12], r.fetched_at)
+    return b^.build()
 
 
 def merge_issues(var old: List[IssueRow], new: List[IssueRow]) -> List[IssueRow]:

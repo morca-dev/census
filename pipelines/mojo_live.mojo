@@ -26,8 +26,6 @@ retries, as a retry would skip the commits its first attempt made
 from std.os import getenv, setenv
 from std.time import sleep
 
-from iceberg.batch import ColumnBuilder, batch_of
-from iceberg.values import Datum
 from morca import (
     Cron,
     Ctx,
@@ -42,7 +40,7 @@ from morca import (
     outdated_why,
 )
 from morca.civil import now
-from morca.tables import append, ensure_table, scan, table
+from morca.tables import BatchBuilder, append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import col, i64_at, str_at
@@ -53,9 +51,8 @@ from lake import (
     LIVE_HEADS,
     REPOS,
     live_commits_schema,
+    add_str_or_null,
     live_heads_schema,
-    str_or_null,
-    ts,
 )
 from live import (
     HEADS_BATCH,
@@ -102,33 +99,29 @@ def _heads(mut ctx: Ctx) raises -> Tuple[Dict[String, String], List[String]]:
 
 
 def _commits_batch(rows: List[LiveCommit]) raises -> RecordBatch:
-    var s = live_commits_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(5):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(live_commits_schema())
+    var cs = b.roots.copy()
     for ref c in rows:
-        cs[0].add(Datum.string_(c.repo))
-        cs[1].add(Datum.string_(c.sha))
-        cs[2].add(str_or_null(c.subject))
-        cs[3].add(ts(c.committed_at))
-        cs[4].add(ts(c.seen_at))
-    return batch_of(cs)
+        b.add_str(cs[0], c.repo)
+        b.add_str(cs[1], c.sha)
+        add_str_or_null(b, cs[2], c.subject)
+        b.add_int(cs[3], c.committed_at)
+        b.add_int(cs[4], c.seen_at)
+    return b^.build()
 
 
 def _heads_batch(heads: Dict[String, String], at: Int64) raises -> RecordBatch:
-    var s = live_heads_schema()
-    var cs = List[ColumnBuilder]()
-    for i in range(3):
-        cs.append(ColumnBuilder.of(s, i + 1))
+    var b = BatchBuilder(live_heads_schema())
+    var cs = b.roots.copy()
     var names = List[String]()
     for e in heads.items():
         names.append(e.key)
     sort(names)
     for ref n in names:
-        cs[0].add(Datum.string_(n))
-        cs[1].add(str_or_null(heads[n]))
-        cs[2].add(ts(at))
-    return batch_of(cs)
+        b.add_str(cs[0], n)
+        add_str_or_null(b, cs[1], heads[n])
+        b.add_int(cs[2], at)
+    return b^.build()
 
 
 def _graphql(body: String) raises -> Tuple[Int, String]:

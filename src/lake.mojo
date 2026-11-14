@@ -5,10 +5,15 @@ from std.os import getenv
 from iceberg.catalog.filesystem import FilesystemCatalog, Table
 from iceberg.io import FileIO
 from iceberg.json import json_quote
-from iceberg.schema import Schema
-from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
 from iceberg.types import P_DATE, P_TIMESTAMPTZ
 from iceberg.values import Datum
+from morca.tables import (
+    BatchBuilder,
+    PartitionField,
+    PartitionSpec,
+    Schema,
+    parse_transform,
+)
 
 comptime EVENTS = "gharchive.events"
 comptime REPOS = "mojo.repos"
@@ -576,6 +581,32 @@ def str_or_null(s: String) -> Datum:
     if s.byte_length() == 0:
         return Datum.none()
     return Datum.string_(s)
+
+
+def add_ts_or_null(mut b: BatchBuilder, c: Int, micros: Int64) raises:
+    """A `timestamptz` value into column `c` of `b`, or a null for 0."""
+    if micros == 0:
+        b.add_null(c)
+    else:
+        b.add_int(c, micros)
+
+
+def add_str_or_null(mut b: BatchBuilder, c: Int, s: String) raises:
+    """A string into column `c` of `b`, or a null for an empty one."""
+    if s.byte_length() == 0:
+        b.add_null(c)
+    else:
+        b.add_str(c, s)
+
+
+def add_strs(
+    mut b: BatchBuilder, list_col: Int, element: Int, items: List[String]
+) raises:
+    """A `list<string>` value: `items` into `element` (the list's
+    `<name>.element` column), then the list `list_col` ended."""
+    for ref x in items:
+        b.add_str(element, x)
+    b.end_list(list_col)
 
 
 def warehouse() -> String:
