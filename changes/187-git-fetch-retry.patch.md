@@ -1,0 +1,1 @@
+- **Image builds retry the git download:** the image fetches git's source tarball with retries from three kernel.org mirrors and checks its sha256. (#187)
