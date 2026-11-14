@@ -43,8 +43,9 @@ memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }
 
 [pipelines.mojo_history]
-# Learned (morca #269), at most 4 GB, so its clones count against gharchive's grants.
-memory_gb = "auto..4"
+# Fixed at 2 GB: beta's host grants at most 2.2 GB, and a learned request
+# above that is never met (2.5 GB after the 1.7.0 backfill; morca #462).
+memory_gb = "2"
 # On the server, not the bgent pool (morca.toml's placement), two dista
 # workers each like gharchive.
 env = { DISTA_WORKER_SLOTS = "2" }
