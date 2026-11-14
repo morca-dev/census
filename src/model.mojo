@@ -885,7 +885,7 @@ def read_sources() raises -> Sources:
     var out = Sources()
     var names: List[String] = [
         "repos", "commits", "repo_stats", "activity", "migrations", "releases", "tags",
-        "repo_embeddings", "issues",
+        "repo_embeddings", "issues", "contributors", "dep_forks",
     ]
     for name in names:
         var t = try_load("mojo", name)
