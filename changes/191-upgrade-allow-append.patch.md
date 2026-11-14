@@ -1,1 +1,0 @@
-- **The 1.9.0 search backfill step passes `--allow-append`**, without which morca refused to rerun the days mojo_repos had already appended to. (#191)

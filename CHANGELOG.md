@@ -3,6 +3,12 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.9.1 - 2026-11-14
+
+- **Beta: the mojo_repos search fill runs a month a run**, after the other pipelines. (#190)
+
+- **The 1.9.0 search backfill step passes `--allow-append`**, without which morca refused to rerun the days mojo_repos had already appended to. (#191)
+
 ## 1.9.0 - 2026-11-14
 
 - **Beta: mojo_history asks for 2 GB**, not a learned size beta's host can't grant (morca#462). (#184)
