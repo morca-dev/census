@@ -8,6 +8,19 @@
 # newest release first.
 
 [[version]]
+version = "1.8.0"
+
+[[version.step]]
+id = "renamed-activity"
+when = "after"
+run = "morca backfill --rerun --allow-append mojo_activity 2026-11-13"
+
+[[version.step]]
+id = "renamed-embed"
+when = "after"
+run = "morca backfill --rerun mojo_embed 2026-11-13"
+
+[[version]]
 version = "1.7.0"
 
 [[version.step]]
