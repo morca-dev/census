@@ -1,1 +1,0 @@
-- **Beta: mojo_history asks for 2 GB**, not a learned size beta's host can't grant (morca#462).

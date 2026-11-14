@@ -1,1 +1,0 @@
-- **Registering works again:** mojo_repos no longer reads mojo.repo_stats, which made a cycle with mojo_stats that 1.8.0 couldn't register; CI now registers every pipeline. (#184)

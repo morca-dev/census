@@ -3,6 +3,26 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.9.0 - 2026-11-14
+
+- **Beta: mojo_history asks for 2 GB**, not a learned size beta's host can't grant (morca#462). (#184)
+
+- **Mojo repos found whatever their name:** mojo_repos also asks GitHub's search for `language:Mojo` repos, since GH Archive's recent hours no longer have the events that named them; a backfill after deploying finds the ones missed, such as magmalake/flare_mlake. (#185)
+
+- **Registering works again:** mojo_repos no longer reads mojo.repo_stats, which made a cycle with mojo_stats that 1.8.0 couldn't register; CI now registers every pipeline. (#185)
+
+- **Republishes count for their upstream:** a project using magmalake/flare_mlake, json_mlake or mozz_mlake is listed as a user of the ehsanmok repo it republishes, through a fork. (#185)
+
+- **The console shows contributors and fork data as soon as they change**, not at its next daily rebuild. (#186)
+
+- **Image builds retry the git download:** the image fetches git's source tarball with retries from three kernel.org mirrors and checks its sha256. (#187)
+
+- **Every pipeline on morca-mojo 0.30.0's liblake:** the lake's iceberg and parquet code comes prebuilt with morca, so a pipeline builds faster; the mojo_repos search backfill after deploying runs as fill runs, a month a run overnight. (#188)
+
+**After deploying** (deploy.sh shows these and runs the commands):
+
+- Run `morca backfill --rerun --as-fill mojo_repos 2023-01-01..2026-11-13`.
+
 ## 1.8.0 - 2026-11-14
 
 - **Renamed and transferred repos:** shown and found under their current name, old links redirect; a backfill after deploying counts their activity under the new name. (#182)
