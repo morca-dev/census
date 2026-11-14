@@ -18,7 +18,7 @@ from listing import (
 from model import Library, day
 from categories import category_keys, category_title
 from querymodel import Related, related
-from search import search_score, url_decode, url_encode
+from search import names_score, url_decode, url_encode
 
 from console_cache import Cache
 from console_layout import _age, _chips, _empty, _help, _n, _now_days, _or_dash, _page
@@ -275,7 +275,7 @@ def _matches(query: String, c: Cache) raises -> List[Int]:
     var scores = List[Int]()
     for i in range(len(c.libs)):
         ref l = c.libs[i]
-        var sc = search_score(l.repo, l.description, query, l.topics)
+        var sc = names_score(l.repo, l.aliases, l.description, query, l.topics)
         if sc > 0:
             hits.append(i)
             scores.append(sc)

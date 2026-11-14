@@ -13,6 +13,7 @@ from deps import ForkOf, RepoDep, resolve
 from historyrows import repo_dep_rows
 from days import day_text
 from jscan import micros_to_iso
+from names import Names, NameRow, name_columns, name_rows, names_from
 from lake import (
     ACTIVITY,
     ACTIVITY_REPOS,
@@ -94,6 +95,13 @@ struct Library(Copyable, Movable):
     """How it packages itself for conda at its last commit (`rattler`,
     `conda-build`, `none`); empty when its history was read before
     packaging was."""
+    var key: String
+    """The name mojo.repos and the tables mojo_history and the other
+    pipelines write key it by: the name it was found under, which `repo`
+    (its current name) differs from after a rename or a transfer."""
+    var aliases: List[String]
+    """The other names it had (`names.Names`), which search matches and
+    whose pages redirect to `repo`'s."""
 
 
 @fieldwise_init
@@ -148,15 +156,42 @@ def day(micros: Int64) -> String:
     return String(iso[byte=:10])
 
 
+def repo_names(repos: Table) raises -> Names:
+    """The current and old names of mojo.repos' repositories (`names.mojo`),
+    from mojo.repo_stats and the ids mojo.repos' rows have."""
+    var keys = List[String]()
+    var rows = List[NameRow]()
+    var with_id = _has_field(repos, "repo_id")
+    var cols: List[String] = ["repo"]
+    if with_id:
+        cols.append("repo_id")
+    for b in repos.scan().select(cols^).to_batches():
+        for r in range(b.num_rows):
+            var key = str_at(b.column(0), r)
+            keys.append(key)
+            if with_id and i64_at(b.column(1), r) > 0:
+                rows.append(NameRow(key, -1, "id", "", i64_at(b.column(1), r)))
+    var stats = try_load("mojo", "repo_stats")
+    if stats:
+        for b in stats.value().scan().select(name_columns(stats.value())).to_batches():
+            rows.extend(name_rows(b))
+    return names_from(keys, rows)
+
+
 def libraries(mut ob: Builder) raises -> List[Library]:
-    """Every library, biggest (lines of Mojo now) first. Each commit row is
+    """Every library, biggest (lines of Mojo now) first, each under its
+    current name (`repo_names`): a repository found under a name it has
+    since changed is shown as it is called now, and two rows of mojo.repos
+    that are one repository are one library. Each commit row is
     also given to `ob` (the Overview's numbers), so the commits are scanned
     once for both."""
     var out = List[Library]()
     var repos_table = try_load("mojo", "repos")
     if not repos_table:
         return out^
+    var names = repo_names(repos_table.value())
     var index = Dict[String, Int]()
+    var keys_seen = Dict[String, Bool]()
     var ids = List[Int]()
     for b in repos_table.value().scan().to_batches():
         var c_repo = col(b, "repo")
@@ -171,11 +206,18 @@ def libraries(mut ob: Builder) raises -> List[Library]:
         var c_topics = col(b, "topics") if has_col(b, "topics") else -1
         for r in range(b.num_rows):
             ob.repo_rows += 1
-            var repo = str_at(b.column(c_repo), r)
+            var key = str_at(b.column(c_repo), r)
+            var repo = names.canon(key)
             var first_seen = i64_at(b.column(c_first), r)
             var at = index.get(repo, -1)
-            # One library per name: a repo in mojo.repos twice keeps its
-            # earliest row (by first_seen; the first one read on a tie).
+            # The data checks' repos_unique counts rows twice under one name:
+            # a row under another name of the same repo isn't one.
+            if at >= 0 and key not in keys_seen:
+                ob.repo_rows -= 1
+            keys_seen[key] = True
+            # One library per repository: a repo in mojo.repos twice (under
+            # one name, or an old and a new one) keeps its earliest row (by
+            # first_seen; the first one read on a tie), and that row's key.
             if at >= 0 and first_seen >= out[at].first_seen:
                 continue
             var lib = Library(
@@ -193,6 +235,7 @@ def libraries(mut ob: Builder) raises -> List[Library]:
                 0, 0, 0, False, String(), String(),
                 String(), String(), String(),
                 -1, List[String](), List[String](), List[String](), List[String](), List[String](), String(),
+                key, names.aliases_of(repo),
             )
             if at >= 0:
                 out[at] = lib^
@@ -200,7 +243,11 @@ def libraries(mut ob: Builder) raises -> List[Library]:
             index[repo] = len(out)
             ids.append(ob.add_repo(repo))
             out.append(lib^)
-    _latest_stats(out, index)
+    # The rows the pipelines wrote are keyed by the kept row's name.
+    var by_key = Dict[String, Int]()
+    for i in range(len(out)):
+        by_key[out[i].key] = i
+    _latest_stats(out, index, names)
     var commits_table = try_load("mojo", "commits")
     if commits_table:
         var last_seq = Dict[String, Int64]()
@@ -222,13 +269,13 @@ def libraries(mut ob: Builder) raises -> List[Library]:
             var c_pack = col(b, "packaging") if with_pack else -1
             for r in range(b.num_rows):
                 var repo = str_at(b.column(c_repo), r)
-                if repo not in index:
+                if repo not in by_key:
                     continue
-                ref lib = out[index[repo]]
+                ref lib = out[by_key[repo]]
                 var at = i64_at(b.column(c_at), r)
                 var seq = i64_at(b.column(c_seq), r)
                 ob.add_commit(
-                    ids[index[repo]], at, seq, i64_at(b.column(c_lines), r),
+                    ids[by_key[repo]], at, seq, i64_at(b.column(c_lines), r),
                     tool_code(str_at(b.column(c_tool), r)), str_at(b.column(c_ver), r),
                 )
                 lib.commits += 1
@@ -248,8 +295,8 @@ def libraries(mut ob: Builder) raises -> List[Library]:
     var heads = repo_versions()
     for i in range(len(out)):
         ref lib = out[i]
-        if lib.repo in heads:
-            ref rv = heads[lib.repo]
+        if lib.key in heads:
+            ref rv = heads[lib.key]
             if not usable(lib.mojo_version) and usable(rv.version):
                 lib.mojo_version = rv.version
                 lib.version_source = rv.source
@@ -257,7 +304,7 @@ def libraries(mut ob: Builder) raises -> List[Library]:
             lib.version_estimate = rv.estimate
             lib.declared_deps = rv.declared_deps
         ob.set_version(ids[i], lib.mojo_version, lib.version_estimate)
-    _dependencies(out)
+    _dependencies(out, names)
     # Biggest first.
     for i in range(1, len(out)):
         var j = i
@@ -300,7 +347,7 @@ def repo_versions() raises -> Dict[String, RepoVersion]:
     return out^
 
 
-def _dependencies(mut libs: List[Library]) raises:
+def _dependencies(mut libs: List[Library], names: Names) raises:
     """Each library's dependencies from mojo.repo_deps, and which of them,
     and of the libraries that depend on it, are census repositories
     (`deps.resolve`). Worked out at every build rather than stored, so a
@@ -312,10 +359,10 @@ def _dependencies(mut libs: List[Library]) raises:
     var rows = List[RepoDep]()
     for b in t.value().scan().to_batches():
         rows.extend(repo_dep_rows(b))
-    var names = List[String]()
+    var repos = List[String]()
     for ref l in libs:
-        names.append(l.repo)
-    var g = resolve(names, rows, dep_forks())
+        repos.append(l.repo)
+    var g = resolve(repos, rows, dep_forks(), names.current)
     for ref l in libs:
         if l.repo in g.declared:
             l.declared = g.declared[l.repo].copy()
@@ -357,9 +404,10 @@ def dep_forks() raises -> Dict[String, ForkOf]:
     return out^
 
 
-def _latest_stats(mut libs: List[Library], index: Dict[String, Int]) raises:
+def _latest_stats(mut libs: List[Library], index: Dict[String, Int], names: Names) raises:
     """Each library's stars, forks and topics from its latest row of
-    mojo.repo_stats, when it has one with numbers."""
+    mojo.repo_stats (under any of its names), when it has one with
+    numbers."""
     var stats_table = try_load("mojo", "repo_stats")
     if not stats_table:
         return
@@ -377,7 +425,7 @@ def _latest_stats(mut libs: List[Library], index: Dict[String, Int]) raises:
         var c_lic = col(b, "license")
         var c_new = col(b, "renamed_to")
         for r in range(b.num_rows):
-            var repo = str_at(b.column(c_repo), r)
+            var repo = names.canon(str_at(b.column(c_repo), r))
             if repo not in index:
                 continue
             ref l = libs[index[repo]]
@@ -485,6 +533,54 @@ def activity_all(repo: String = "") raises -> Dict[String, List[MonthActivity]]:
             while j > 0 and list[j - 1].month > list[j].month:
                 list.swap_elements(j - 1, j)
                 j -= 1
+    return out^
+
+
+def merge_months(a: List[MonthActivity], b: List[MonthActivity]) -> List[MonthActivity]:
+    """Two lists of a repo's activity by month (oldest first), as one: the
+    months of both, a month in both summed. A renamed repo's events are
+    under each name it had (#181)."""
+    var out = List[MonthActivity]()
+    var i = 0
+    var j = 0
+    while i < len(a) or j < len(b):
+        if j >= len(b) or (i < len(a) and a[i].month < b[j].month):
+            out.append(a[i].copy())
+            i += 1
+        elif i >= len(a) or b[j].month < a[i].month:
+            out.append(b[j].copy())
+            j += 1
+        else:
+            var m = a[i].copy()
+            m.stars += b[j].stars
+            m.forks += b[j].forks
+            m.releases += b[j].releases
+            m.issues_opened += b[j].issues_opened
+            m.prs_opened += b[j].prs_opened
+            m.pushes += b[j].pushes
+            m.days_active += b[j].days_active
+            out.append(m^)
+            i += 1
+            j += 1
+    return out^
+
+
+def merge_releases(a: List[Release], b: List[Release]) -> List[Release]:
+    """Two lists of a repo's releases and tags (newest first), as one,
+    newest first; a tag in both is kept once, from `a`."""
+    var out = a.copy()
+    var seen = Dict[String, Bool]()
+    for ref r in a:
+        seen[r.tag] = True
+    for ref r in b:
+        if r.tag not in seen:
+            seen[r.tag] = True
+            out.append(r.copy())
+    for i in range(1, len(out)):
+        var j = i
+        while j > 0 and out[j - 1].at < out[j].at:
+            out.swap_elements(j - 1, j)
+            j -= 1
     return out^
 
 

@@ -1,0 +1,9 @@
+[[step]]
+id = "renamed-activity"
+when = "after"
+run = "morca backfill --rerun --allow-append mojo_activity 2026-11-13"
+
+[[step]]
+id = "renamed-embed"
+when = "after"
+run = "morca backfill --rerun mojo_embed 2026-11-13"

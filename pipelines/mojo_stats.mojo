@@ -8,12 +8,14 @@ numbers, so days before it can't be filled. The step asks GitHub
 about each repository in `mojo.repos` (`GET /repos/{owner}/{repo}`, one
 request each) and writes one row per repository to `mojo.repo_stats`,
 `as_of` the run's day, partitioned by month. A repository that is gone,
-blocked or renamed is a row with that `state`. A rate limit (403/429) is
+blocked or renamed is a row with that `state`; a renamed or transferred
+one's row has its new name (`renamed_to`) and every answer GitHub's id for
+it (`repo_id`), from which the census learns its current name (`names.mojo`). A rate limit (403/429) is
 waited out by `Retry-After` or `X-RateLimit-Reset`, for at most
 `MOJO_STATS_MAX_WAIT` seconds (default 3900) in all.
 
 Then it asks, once each, about the GitHub repositories that mojo.repo_deps
-names (`dep_repo`) and mojo.repos doesn't have, and keeps GitHub's `fork`,
+names (`dep_repo`) and mojo.repos doesn't have under any of its names, and keeps GitHub's `fork`,
 `parent` and `source` for them in mojo.dep_forks, so the console can count
 a project that depends on a fork of a library as one of the library's
 dependents. One whose answer was an error is asked again the next day; a
@@ -36,7 +38,7 @@ from morca.civil import now
 from morca.tables import append, ensure_table, scan, table
 from parquet import RecordBatch
 
-from cols import bool_at, col, i32_at, i64_at, str_at, strs_at
+from cols import bool_at, col, has_col, i32_at, i64_at, str_at, strs_at
 from days import days_of, month_of
 from detect import parse_fork
 from fetch import Reply, github
@@ -54,6 +56,7 @@ from lake import (
     ts,
     ts_or_null,
 )
+from names import NameRow, names_from
 from replace import partition_files, replace_files
 from stats import StatsRow, limited, state_of, stats_of
 
@@ -67,6 +70,11 @@ struct _Stored(Copyable, Movable):
     var as_of: Int64
     var fetched_at: Int64
     var row: StatsRow
+
+
+def _name_row(st: _Stored) -> NameRow:
+    """What a stored row says about the repository's name."""
+    return NameRow(st.row.repo, st.as_of, st.row.state, st.row.renamed_to, st.row.repo_id)
 
 
 def _repos(mut ctx: Ctx) raises -> List[String]:
@@ -102,6 +110,8 @@ def stored_rows(b: RecordBatch) raises -> List[_Stored]:
         "renamed_to",
     ]:
         c.append(col(b, name))
+    # `repo_id` came later (#181): a month written before reads it as 0.
+    var c_id = col(b, "repo_id") if has_col(b, "repo_id") else -1
     for r in range(b.num_rows):
         out.append(
             _Stored(
@@ -123,6 +133,7 @@ def stored_rows(b: RecordBatch) raises -> List[_Stored]:
                     i64_at(b.column(c[14]), r),
                     str_at(b.column(c[15]), r),
                     str_at(b.column(c[16]), r),
+                    i64_at(b.column(c_id), r) if c_id >= 0 else Int64(0),
                 ),
             )
         )
@@ -138,7 +149,7 @@ def _num(v: Int64, ok: Bool) -> Datum:
 def stats_batch(rows: List[_Stored]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.repo_stats`. `topics` is a list column, so
     the batch is built from column trees, with the columns in schema order
-    (field ids 1-8, the topics, then 11-18; ids 9 and 10 are the topics'
+    (field ids 1-8, the topics, then 11-19; ids 9 and 10 are the topics'
     list and element)."""
     var s = repo_stats_schema()
     var cs = List[ColumnBuilder]()
@@ -146,7 +157,7 @@ def stats_batch(rows: List[_Stored]) raises -> RecordBatch:
         cs.append(ColumnBuilder.of(s, id))
     var topics = NestedBuilder.of(s, 9)
     var rest = List[ColumnBuilder]()
-    for id in [11, 12, 13, 14, 15, 16, 17, 18]:
+    for id in [11, 12, 13, 14, 15, 16, 17, 18, 19]:
         rest.append(ColumnBuilder.of(s, id))
     for ref st in rows:
         ref r = st.row
@@ -173,6 +184,7 @@ def stats_batch(rows: List[_Stored]) raises -> RecordBatch:
         rest[4].add(str_or_null(r.description))
         rest[5].add(str_or_null(r.default_branch))
         rest[7].add(str_or_null(r.renamed_to))
+        rest[8].add(Datum.long_(r.repo_id) if r.repo_id > 0 else Datum.none())
     var trees = List[ColumnTree]()
     for ref c in cs:
         trees.append(c.build_tree())
@@ -237,7 +249,7 @@ def dep_forks_batch(rows: List[DepFork]) raises -> RecordBatch:
 
 def _dep_forks(mut ctx: Ctx, repos: List[String], fetched: Int64) raises -> Int:
     """Asks GitHub about the repositories census repositories depend on that
-    aren't in the census and mojo.dep_forks has no answer for, and rewrites
+    aren't in the census (`repos`: every name of every census repository) and mojo.dep_forks has no answer for, and rewrites
     mojo.dep_forks with them (the table is in `replaces=`, unpartitioned, so
     the `append` replaces it). Returns how many it asked about."""
     var relations = List[String]()
@@ -360,9 +372,15 @@ def refresh(mut ctx: Ctx, d: Day) raises -> Int:
     var files = partition_files(t, months)
     var read_rows = Int64(0)
     var kept = 0
+    # Every row's name, for the repositories' old and new names (#181).
+    var named = List[NameRow]()
+    for ref st in rows:
+        named.append(_name_row(st))
     if t.metadata.has_current_snapshot:
         for b in t.scan().to_batches():
             for ref st in stored_rows(b):
+                if st.as_of != as_of:
+                    named.append(_name_row(st))
                 if month_of(st.as_of) != month_of(as_of):
                     continue
                 read_rows += 1
@@ -381,7 +399,13 @@ def refresh(mut ctx: Ctx, d: Day) raises -> Int:
     # The forks among the repositories depended on: a failure here is
     # logged, not raised, so it never costs the day's stats.
     try:
-        _ = _dep_forks(ctx, repos, fetched)
+        # A dependency named by a census repository's old or new name is
+        # that repository, not one to ask about.
+        var names = names_from(repos, named)
+        var census = List[String]()
+        for e in names.all.values():
+            census.extend(e.copy())
+        _ = _dep_forks(ctx, census, fetched)
     except e:
         ctx.log(String("dep_forks: ", e))
     return len(repos)

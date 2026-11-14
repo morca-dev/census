@@ -88,6 +88,24 @@ def search_score(
     return 0
 
 
+def names_score(
+    repo: String,
+    aliases: List[String],
+    description: String,
+    query: String,
+    topics: List[String] = List[String](),
+) -> Int:
+    """`search_score` over a repository's current name (`repo`) and the
+    names it had (`aliases`, #181), the best of them: an old name matches as
+    a name, one point below the same match on the current name."""
+    var best = search_score(repo, description, query, topics)
+    for ref a in aliases:
+        var sc = search_score(a, String(), query) - 1
+        if sc > best:
+            best = sc
+    return best
+
+
 def version_family(v: String) -> String:
     """`24.x`, `25.x`, `0.25.x`, `0.26.x`, `1.x`: the line of releases `v` is
     on (a calendar 26.1 is 0.26.x); a string that isn't a version is its own family, `other`."""

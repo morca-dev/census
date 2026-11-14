@@ -671,6 +671,7 @@ def resolve(
     repos: List[String],
     rows: List[RepoDep],
     forks: Dict[String, ForkOf] = Dict[String, ForkOf](),
+    aliases: Dict[String, String] = Dict[String, String](),
 ) raises -> DepGraph:
     """Each repository's dependencies that are census repositories, and the
     reverse.
@@ -693,7 +694,13 @@ def resolve(
     use it only that way. `second` is worked out from the resulting
     `used_by`.
     Workspace names aren't used in (2): a workspace is often named after
-    the template it came from (`my-project`, `mojo`), not a package."""
+    the template it came from (`my-project`, `mojo`), not a package.
+
+    `aliases` maps the lowercased old names of renamed or transferred
+    repositories to their names in `repos` (`names.Names.current`): a
+    URL, a fork's parent or source, a row's own `repo` (mojo.repo_deps is
+    keyed by the name a repository was found under) and the name in (3)
+    under an old name resolve to the repository as it is named now."""
     var g = DepGraph()
     var by_lower = Dict[String, String]()
     var by_short = Dict[String, List[String]]()
@@ -703,6 +710,21 @@ def resolve(
         if s not in by_short:
             by_short[s] = List[String]()
         by_short[s].append(r)
+    for e in aliases.items():
+        var cur = e.value.lower()
+        if cur not in by_lower or e.key in by_lower:
+            continue
+        var r = by_lower[cur]
+        by_lower[e.key] = r
+        var s = norm_name(_short(e.key))
+        if s not in by_short:
+            by_short[s] = List[String]()
+        var have = False
+        for x in by_short[s]:
+            if x == r:
+                have = True
+        if not have:
+            by_short[s].append(r)
     # Published names, by `norm_name`.
     var provided = Dict[String, List[String]]()
     for ref rd in rows:

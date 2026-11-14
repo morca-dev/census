@@ -38,13 +38,15 @@ struct StatsRow(Copyable, Movable):
     var size_kb: Int64
     var default_branch: String
     var renamed_to: String
+    var repo_id: Int64
+    """GitHub's `id`, which a rename or transfer keeps; 0 when unknown."""
 
     @staticmethod
     def empty(repo: String, state: String) -> Self:
         """A row with only a name and a state."""
         return Self(
             repo, state, 0, 0, 0, 0, List[String](), False, 0, "", "", "", 0,
-            "", "",
+            "", "", 0,
         )
 
     def has_numbers(self) -> Bool:
@@ -90,6 +92,7 @@ def parse_stats(repo: String, body: String) -> StatsRow:
         long_of(text(b, field(b, all, "size"))),
         text(b, field(b, all, "default_branch")),
         renamed_to,
+        long_of(text(b, field(b, all, "id"))),
     )
 
 

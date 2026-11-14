@@ -34,7 +34,9 @@ def _unlisted() -> List[String]:
     ]
 
 
-def _lib(repo: String, description: String, topics: List[String]) -> Library:
+def _lib(
+    repo: String, description: String, topics: List[String], aliases: List[String] = List[String]()
+) -> Library:
     return Library(
         repo,
         description,
@@ -69,6 +71,8 @@ def _lib(repo: String, description: String, topics: List[String]) -> Library:
         List[String](),
         List[String](),
         "rattler",
+        aliases[0] if len(aliases) > 0 else repo,
+        aliases.copy(),
     )
 
 
@@ -78,7 +82,10 @@ def _cache() raises -> Cache:
     c.ready = True
     c.built_day = 20_400
     c.libs.append(_lib("acme/tomlkit", "A TOML reader", ["toml", "parser"]))
-    c.libs.append(_lib("acme/http", "HTTP for Mojo", ["web"]))
+    # Found as old-owner/mojo-http, which it was called before a transfer
+    # and a rename (#181): the tables key it by that name.
+    c.libs.append(_lib("acme/http", "HTTP for Mojo", ["web"], ["old-owner/mojo-http"]))
+    c.moved["old-owner/mojo-http"] = "acme/http"
     for ref l in c.libs:
         c.lines.append(l.mojo_lines)
         c.files.append(l.mojo_files)
@@ -244,6 +251,24 @@ def test_meta_tags() raises:
     assert_true("content='acme/tomlkit: A TOML reader. 2,000 lines of Mojo in 10 files, Mojo 25.1" in repo)
     var search = _body(_get(r, "/search?q=toml"))
     assert_true("<link rel=alternate type=application/json href='/api/search?q=toml'>" in search)
+
+
+def test_renamed_repo() raises:
+    # A repo's old name redirects to its page under the current one, the
+    # page says what it was called, and search finds it by either (#181).
+    var r = _router()
+    var page = _get(r, "/repos/old-owner/mojo-http")
+    assert_equal(page.status, 301)
+    assert_equal(page.headers.get("Location"), "/repos/acme/http")
+    var api = _get(r, "/api/repos/Old-Owner/Mojo-HTTP")
+    assert_equal(api.status, 301)
+    assert_equal(api.headers.get("Location"), "/api/repos/acme/http")
+    assert_equal(_get(r, "/repos/old-owner/nothing").status, 404)
+    assert_true("formerly old-owner/mojo-http" in _body(_get(r, "/repos/acme/http")))
+    assert_true('"aliases":["old-owner/mojo-http"]' in _body(_get(r, "/api/repos/acme/http")))
+    assert_true("acme/http" in _body(_get(r, "/api/repos?q=old-owner")))
+    assert_true("acme/http" in _body(_get(r, "/api/search?q=mojo-http")))
+    assert_true("acme/http" in _body(_get(r, "/api/repos?q=acme/http")))
 
 
 def test_api_repos_q_filters() raises:

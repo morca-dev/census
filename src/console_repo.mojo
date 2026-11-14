@@ -2,7 +2,7 @@
 lines of Mojo over time, dependencies, similar repos, stars per month,
 contributors per month, releases and tags, issues and pull requests, migrations and latest commits."""
 
-from flare.http import Request, Response, html_escape, internal_error, not_found
+from flare.http import Request, Response, html_escape, internal_error, not_found, redirect
 from contributors import RepoContributors
 from days import day_text
 from model import Library, MonthActivity, Point, day
@@ -269,11 +269,25 @@ def _version_stat(l: Library) -> String:
     return _stat("Mojo version", _or_dash(String()), note)
 
 
+def _formerly(aliases: List[String]) -> String:
+    """" · formerly a/b, c/d": the names a renamed or transferred repo had,
+    or ""."""
+    if len(aliases) == 0:
+        return String()
+    var out = String(" &middot; formerly ")
+    for i in range(len(aliases)):
+        out.write(", " if i > 0 else "", html_escape(aliases[i]))
+    return out^
+
+
 def repo_page(req: Request, c: Cache) raises -> Response:
     try:
         var repo = String(req.param("owner"), "/", req.param("name"))
         var found = c.find(repo)
         if not found:
+            var moved = c.moved_to(repo)
+            if moved.byte_length() > 0:
+                return redirect(String("/repos/", moved), 301)
             return not_found(req.url)
         var l = found.value().copy()
         var data = c.data(repo)
@@ -291,8 +305,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             " &middot; ", _n(l.mojo_lines), " lines of Mojo in ", _n(l.mojo_files), " files at the last of ",
             l.commits, " commits (", day(l.first_commit), " to ", day(l.last_commit), ")",
             String(" &middot; <strong>archived</strong>") if l.archived else String(),
-            String(" &middot; now <a href='https://github.com/", html_escape(l.renamed_to), "' rel=noopener>",
-                html_escape(l.renamed_to), "</a>") if l.renamed_to.byte_length() > 0 else String(),
+            _formerly(l.aliases),
             String(" &middot; GitHub says <strong>", html_escape(l.state), "</strong>")
                 if l.state.byte_length() > 0 and l.state != "ok" and l.state != "renamed" else String(),
             "</p><div class=stats>",

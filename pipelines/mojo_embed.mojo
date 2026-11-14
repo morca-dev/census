@@ -4,8 +4,9 @@ categories on the console.
 
 Daily partitions from 2026-11-10, each filled at 07:00 UTC, after
 mojo_stats has refreshed the descriptions (06:00). A run reads every
-repository's text (`mojo.repos`, overridden by its latest `ok` row of
-`mojo.repo_stats`), and embeds only the repositories whose text or model
+repository's text (`mojo.repos`, overridden by its latest `ok` or
+`renamed` row of `mojo.repo_stats`, a renamed repository under its new
+name), and embeds only the repositories whose text or model
 changed since their row was written: each row keeps `input_hash`, a hash of
 the text and of the model's weights. The others keep their rows, and a run
 with nothing new commits nothing. A repository gone from `mojo.repos` loses
@@ -53,15 +54,18 @@ comptime BATCH = 32
 
 @fieldwise_init
 struct _Text(Copyable, Movable):
+    var name: String  # its current name: GitHub's after a rename (#181)
     var description: String
     var topics: List[String]
     var as_of: Int64  # the repo_stats day it came from; -1 for mojo.repos
 
 
 def _texts(mut ctx: Ctx) raises -> Dict[String, _Text]:
-    """Each repository of `mojo.repos` with its description and topics, the
-    latest `ok` row of `mojo.repo_stats` winning over the row of
-    mojo.repos, which is as old as the repository's discovery."""
+    """Each repository of `mojo.repos` with its name, description and
+    topics, the latest row of `mojo.repo_stats` with an answer (`ok`, or
+    `renamed`: a renamed or transferred repository's new name and current
+    text, #181) winning over the row of mojo.repos, which is as old as the
+    repository's discovery."""
     var out = Dict[String, _Text]()
     var t = table(ctx, REPOS)
     for b in scan(ctx, t).to_batches():
@@ -70,9 +74,8 @@ def _texts(mut ctx: Ctx) raises -> Dict[String, _Text]:
         var c_topics = col(b, "topics") if has_col(b, "topics") else -1
         for r in range(b.num_rows):
             var topics = strs_at(b, c_topics, r) if c_topics >= 0 else List[String]()
-            out[str_at(b.column(c_repo), r)] = _Text(
-                str_at(b.column(c_desc), r), topics^, -1
-            )
+            var repo = str_at(b.column(c_repo), r)
+            out[repo] = _Text(repo, str_at(b.column(c_desc), r), topics^, -1)
     var stats: Optional[type_of(t)] = None
     try:
         stats = table(ctx, REPO_STATS)
@@ -85,15 +88,19 @@ def _texts(mut ctx: Ctx) raises -> Dict[String, _Text]:
             var c_state = col(b, "state")
             var c_desc = col(b, "description")
             var c_topics = col(b, "topics")
+            var c_new = col(b, "renamed_to")
             for r in range(b.num_rows):
                 var repo = str_at(b.column(c_repo), r)
-                if repo not in out or str_at(b.column(c_state), r) != "ok":
+                var state = str_at(b.column(c_state), r)
+                if repo not in out or (state != "ok" and state != "renamed"):
                     continue
                 var as_of = i32_at(b.column(c_as_of), r)
                 if as_of <= out[repo].as_of:
                     continue
+                var name = str_at(b.column(c_new), r) if state == "renamed" else repo
                 out[repo] = _Text(
-                    str_at(b.column(c_desc), r), strs_at(b, c_topics, r), as_of
+                    name if name.byte_length() > 0 else repo,
+                    str_at(b.column(c_desc), r), strs_at(b, c_topics, r), as_of,
                 )
     return out^
 
@@ -140,7 +147,7 @@ def embed(mut ctx: Ctx, d: Day) raises -> Int:
     var hashes = List[String]()
     for ref repo in repos:
         ref tx = texts[repo]
-        var input = repo_input(repo, tx.description, tx.topics)
+        var input = repo_input(tx.name, tx.description, tx.topics)
         var h = input_hash(input, rev)
         var prev = old.get(repo)
         if prev and prev.value().input_hash == h:
