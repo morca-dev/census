@@ -1,1 +1,0 @@
-- **The console shows contributors and fork data as soon as they change**, not at its next daily rebuild. (#186)
