@@ -142,3 +142,6 @@ secrets = { GITHUB_TOKEN = "orca/github-token" }
 [pipelines.mojo_live]
 memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }
+# One mojo_live run at a time across the cluster, also across a deploy's
+# handover (morca#503; needs HANDOVER_WAIT_SECONDS in hetzner.env).
+concurrency = { key = "mojo_live", limit = 1 }
