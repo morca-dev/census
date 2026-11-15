@@ -18,6 +18,7 @@ for config in morca.toml morca.dev.toml morca.lab.toml; do
     # A fresh state and warehouse each: nothing registered before, as on a
     # new server.
     MORCA_CONFIG=$PWD/$config MORCA_PIPELINES_DIR=$PWD/build \
+            MORCA_HANDOVER_WAIT_SECONDS=3600 \
         MORCA_WAREHOUSE=$work/warehouse MORCA_LOGS=$work/logs \
         sh scripts/with-postgres.sh ./build/morca register || {
         rm -rf "$work"

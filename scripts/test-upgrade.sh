@@ -33,6 +33,7 @@ if [ "${1:-}" != --inside ]; then
         echo "== $config"
         work=$(mktemp -d "${TMPDIR:-/tmp}/census-upgrade.XXXXXX")
         MORCA_CONFIG=$PWD/$config MORCA_PIPELINES_DIR=$PWD/build \
+            MORCA_HANDOVER_WAIT_SECONDS=3600 \
             MORCA_WAREHOUSE=$work/warehouse MORCA_LOGS=$work/logs \
             CENSUS_WORK=$work \
             sh scripts/with-postgres.sh sh scripts/test-upgrade.sh --inside \
