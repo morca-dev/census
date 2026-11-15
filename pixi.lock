@@ -119,7 +119,7 @@ environments:
       - conda_source: lz4-mojo[5b550409] @ git+https://github.com/magmalake/lz4.mojo?rev=23cd6e54967d7e41573371507228ca5c958ca685#23cd6e54967d7e41573371507228ca5c958ca685
       - conda_source: lz4-shim[9bc9fb5b] @ git+https://github.com/magmalake/lz4.mojo?subdirectory=shim&rev=23cd6e54967d7e41573371507228ca5c958ca685#23cd6e54967d7e41573371507228ca5c958ca685
       - conda_source: memory-region-mojo[db2704ca] @ git+https://github.com/magmalake/memory-region.mojo?rev=40068c4f95ea659e9b78aa91ced45420b07e3e6e#40068c4f95ea659e9b78aa91ced45420b07e3e6e
-      - conda_source: morca-mojo[fa3b067f] @ git+https://github.com/morca-dev/morca?rev=e36173c96db93f839450a852f7262c536da4bd4e#e36173c96db93f839450a852f7262c536da4bd4e
+      - conda_source: morca-mojo[cb5564d7] @ git+https://github.com/morca-dev/morca?rev=da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d#da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d
       - conda_source: objectstore-mojo[6c7afd4c] @ git+https://github.com/magmalake/objectstore.mojo?rev=ff66975c095f392695facc1b6dd56823dec914bc#ff66975c095f392695facc1b6dd56823dec914bc
       - conda_source: objectstore-shim[32e5b8f8] @ git+https://github.com/magmalake/objectstore.mojo?subdirectory=shim&rev=ff66975c095f392695facc1b6dd56823dec914bc#ff66975c095f392695facc1b6dd56823dec914bc
       - conda_source: parquet-full-mojo[f83ac14c] @ git+https://github.com/magmalake/parquet.mojo?subdirectory=full&rev=8ea972080ad64bcbed569cf382a767da7b6be0bb#8ea972080ad64bcbed569cf382a767da7b6be0bb
@@ -229,7 +229,7 @@ environments:
       - conda_source: lz4-mojo[03f31af5] @ git+https://github.com/magmalake/lz4.mojo?rev=23cd6e54967d7e41573371507228ca5c958ca685#23cd6e54967d7e41573371507228ca5c958ca685
       - conda_source: lz4-shim[75698e39] @ git+https://github.com/magmalake/lz4.mojo?subdirectory=shim&rev=23cd6e54967d7e41573371507228ca5c958ca685#23cd6e54967d7e41573371507228ca5c958ca685
       - conda_source: memory-region-mojo[c0e0ffd5] @ git+https://github.com/magmalake/memory-region.mojo?rev=40068c4f95ea659e9b78aa91ced45420b07e3e6e#40068c4f95ea659e9b78aa91ced45420b07e3e6e
-      - conda_source: morca-mojo[d500d9c2] @ git+https://github.com/morca-dev/morca?rev=e36173c96db93f839450a852f7262c536da4bd4e#e36173c96db93f839450a852f7262c536da4bd4e
+      - conda_source: morca-mojo[8bba9b7d] @ git+https://github.com/morca-dev/morca?rev=da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d#da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d
       - conda_source: objectstore-mojo[7d1c7509] @ git+https://github.com/magmalake/objectstore.mojo?rev=ff66975c095f392695facc1b6dd56823dec914bc#ff66975c095f392695facc1b6dd56823dec914bc
       - conda_source: objectstore-shim[2602ced2] @ git+https://github.com/magmalake/objectstore.mojo?subdirectory=shim&rev=ff66975c095f392695facc1b6dd56823dec914bc#ff66975c095f392695facc1b6dd56823dec914bc
       - conda_source: parquet-full-mojo[6a80f1d2] @ git+https://github.com/magmalake/parquet.mojo?subdirectory=full&rev=8ea972080ad64bcbed569cf382a767da7b6be0bb#8ea972080ad64bcbed569cf382a767da7b6be0bb
@@ -331,7 +331,7 @@ environments:
       - conda_source: lz4-mojo[0221ba9f] @ git+https://github.com/magmalake/lz4.mojo?rev=23cd6e54967d7e41573371507228ca5c958ca685#23cd6e54967d7e41573371507228ca5c958ca685
       - conda_source: lz4-shim[fd3796b6] @ git+https://github.com/magmalake/lz4.mojo?subdirectory=shim&rev=23cd6e54967d7e41573371507228ca5c958ca685#23cd6e54967d7e41573371507228ca5c958ca685
       - conda_source: memory-region-mojo[8b9c80ce] @ git+https://github.com/magmalake/memory-region.mojo?rev=40068c4f95ea659e9b78aa91ced45420b07e3e6e#40068c4f95ea659e9b78aa91ced45420b07e3e6e
-      - conda_source: morca-mojo[bbe191e9] @ git+https://github.com/morca-dev/morca?rev=e36173c96db93f839450a852f7262c536da4bd4e#e36173c96db93f839450a852f7262c536da4bd4e
+      - conda_source: morca-mojo[1b99bdff] @ git+https://github.com/morca-dev/morca?rev=da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d#da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d
       - conda_source: objectstore-mojo[bf39ea9c] @ git+https://github.com/magmalake/objectstore.mojo?rev=ff66975c095f392695facc1b6dd56823dec914bc#ff66975c095f392695facc1b6dd56823dec914bc
       - conda_source: objectstore-shim[57146c0c] @ git+https://github.com/magmalake/objectstore.mojo?subdirectory=shim&rev=ff66975c095f392695facc1b6dd56823dec914bc#ff66975c095f392695facc1b6dd56823dec914bc
       - conda_source: parquet-full-mojo[a9df9a88] @ git+https://github.com/magmalake/parquet.mojo?subdirectory=full&rev=8ea972080ad64bcbed569cf382a767da7b6be0bb#8ea972080ad64bcbed569cf382a767da7b6be0bb
@@ -7324,8 +7324,8 @@ packages:
   - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026e-h5d301ff_0.conda
   - conda: https://conda.modular.com/max/linux-64/mojo-compiler-1.2.0-release.conda
   - conda: https://conda.modular.com/max/noarch/mojo-python-1.2.0-release.conda
-- conda_source: morca-mojo[bbe191e9] @ git+https://github.com/morca-dev/morca?rev=e36173c96db93f839450a852f7262c536da4bd4e#e36173c96db93f839450a852f7262c536da4bd4e
-  version: 0.31.0
+- conda_source: morca-mojo[1b99bdff] @ git+https://github.com/morca-dev/morca?rev=da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d#da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d
+  version: 0.32.0
   build: h60d57d3_0
   subdir: osx-arm64
   variants:
@@ -7466,8 +7466,8 @@ packages:
   - conda_source: thrift-mojo[0a485ac1] @ git+https://github.com/magmalake/thrift.mojo?rev=21cdbce67d22d72e88e88a60e2f168b05b4ef9fa#21cdbce67d22d72e88e88a60e2f168b05b4ef9fa
   - conda_source: zstd-mojo[36589393] @ git+https://github.com/magmalake/zstd.mojo?rev=76190bb31012cd2d2f6712c4e1724a66474215db#76190bb31012cd2d2f6712c4e1724a66474215db
   - conda_source: zstd-shim[e834a944] @ git+https://github.com/magmalake/zstd.mojo?subdirectory=shim&rev=76190bb31012cd2d2f6712c4e1724a66474215db#76190bb31012cd2d2f6712c4e1724a66474215db
-- conda_source: morca-mojo[d500d9c2] @ git+https://github.com/morca-dev/morca?rev=e36173c96db93f839450a852f7262c536da4bd4e#e36173c96db93f839450a852f7262c536da4bd4e
-  version: 0.31.0
+- conda_source: morca-mojo[8bba9b7d] @ git+https://github.com/morca-dev/morca?rev=da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d#da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d
+  version: 0.32.0
   build: he8cfe8b_0
   subdir: linux-aarch64
   variants:
@@ -7621,8 +7621,8 @@ packages:
   - conda_source: thrift-mojo[5f9111c9] @ git+https://github.com/magmalake/thrift.mojo?rev=21cdbce67d22d72e88e88a60e2f168b05b4ef9fa#21cdbce67d22d72e88e88a60e2f168b05b4ef9fa
   - conda_source: zstd-mojo[d9c588bc] @ git+https://github.com/magmalake/zstd.mojo?rev=76190bb31012cd2d2f6712c4e1724a66474215db#76190bb31012cd2d2f6712c4e1724a66474215db
   - conda_source: zstd-shim[d55ce47a] @ git+https://github.com/magmalake/zstd.mojo?subdirectory=shim&rev=76190bb31012cd2d2f6712c4e1724a66474215db#76190bb31012cd2d2f6712c4e1724a66474215db
-- conda_source: morca-mojo[fa3b067f] @ git+https://github.com/morca-dev/morca?rev=e36173c96db93f839450a852f7262c536da4bd4e#e36173c96db93f839450a852f7262c536da4bd4e
-  version: 0.31.0
+- conda_source: morca-mojo[cb5564d7] @ git+https://github.com/morca-dev/morca?rev=da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d#da337cd2a253d4ff0ee1fe6264f6fe4e0f92167d
+  version: 0.32.0
   build: hb0f4dca_0
   subdir: linux-64
   variants:

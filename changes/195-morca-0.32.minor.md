@@ -1,0 +1,1 @@
+- **morca-mojo 0.32.0:** pipelines' Data tab and its cache, and morca_maintain on liblake, so the pipelines binary no longer compiles iceberg; the image carries `dev.morca.hetzner-min` for deploy.sh's tools check. (#195)
