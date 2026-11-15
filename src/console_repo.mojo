@@ -16,7 +16,7 @@ from console_cache import Cache
 from issues import IssueRow, RepoIssues
 from console_how import MORCA_UI
 from console_layout import _age, _chips, _empty, _n, _now_days, _or_dash, _page, _this_month
-from console_migrations import _line_chart
+from console_migrations_body import _line_chart
 
 
 comptime COMMITS_SHOWN = 50
