@@ -40,7 +40,7 @@ from overview import (
     unversioned,
 )
 
-from console_migrations import _migrations_body
+from console_migrations_body import _migrations_body
 from issues import RepoIssues, add_issue_months, read_issue_rows, summarize
 from similar import Embeddings, Neighbor, nearest, read_embeddings
 from categories import categorize

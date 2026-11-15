@@ -168,14 +168,23 @@ jobs:
             docker push "$GHCR_IMAGE:$t-${{ matrix.arch }}"
           done
 
-  # `test` and `image`, the checks main's ruleset requires: each passes once
-  # every architecture's job has (skipped counts).
-  test:
-    if: always()
-    needs: test-arch
+  # Imports: no cycles between modules, and each name imported from the
+  # module that defines it (github.com/magmalake/customs).
+  customs:
     runs-on: ubuntu-latest
     steps:
-      - run: '[ "${{ needs.test-arch.result }}" = success ]'
+      - uses: actions/checkout@v4
+      - uses: magmalake/customs@v0.2.1
+
+  # `test` and `image`, the checks main's ruleset requires: each passes once
+  # every architecture's job has (skipped counts).
+  # `test` also needs customs.
+  test:
+    if: always()
+    needs: [test-arch, customs]
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.test-arch.result }}" = success ] && [ "${{ needs.customs.result }}" = success ]'
   image:
     if: always()
     needs: image-arch
