@@ -3,6 +3,16 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.10.0 - 2026-11-15
+
+- **Upgrade steps checked in CI:** every `morca backfill` step of upgrade.toml is dry-run against earlier runs (`pixi run test-upgrade`, morca-mojo 0.31.0). (#194)
+
+- **morca-mojo 0.32.0:** pipelines' Data tab and its cache, and morca_maintain on liblake, so the pipelines binary no longer compiles iceberg; the image carries `dev.morca.hetzner-min` for deploy.sh's tools check. (#195)
+
+- **morca-mojo 0.33.0:** the redesigned Data tab; images need deploy tools 0.34.0 or later. (#196)
+
+- **mojo_live runs one at a time across the cluster**, also across a deploy. (#197)
+
 ## 1.9.1 - 2026-11-14
 
 - **Beta: the mojo_repos search fill runs a month a run**, after the other pipelines. (#190)
