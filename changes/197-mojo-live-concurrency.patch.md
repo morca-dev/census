@@ -1,1 +1,0 @@
-- **mojo_live runs one at a time across the cluster**, also across a deploy. (#197)

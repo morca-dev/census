@@ -1,1 +1,0 @@
-- **Upgrade steps checked in CI:** every `morca backfill` step of upgrade.toml is dry-run against earlier runs (`pixi run test-upgrade`, morca-mojo 0.31.0). (#194)
