@@ -1,0 +1,1 @@
+- **morca-mojo 0.33.0:** the redesigned Data tab; images need deploy tools 0.34.0 or later. (#196)

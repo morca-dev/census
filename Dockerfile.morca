@@ -161,7 +161,7 @@ COPY --from=build /src/project/morca.toml /src/project/morca.dev.toml /src/proje
 # upgrade.toml, the steps a deploy of each release needs (MORCA_UPGRADE).
 COPY --from=build /src/project/CHANGELOG.md /src/project/upgrade.toml /opt/morca/
 # deploy.sh's tools check (morca #489): morca's deploy/runtime.Dockerfile value; bump it with that file's on each morca pin move.
-LABEL dev.morca.hetzner-min="0.31.0"
+LABEL dev.morca.hetzner-min="0.34.0"
 ARG MORCA_SOURCE=""
 ARG MORCA_COMMIT=""
 # The release this image is (`1.2.0`), empty for one built from a branch; the
