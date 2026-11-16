@@ -10,12 +10,14 @@ from flare.http import Request, Response, Router
 
 from checks import CheckRun
 from console_ai import html_text, llms_txt
-from console_cache import Cache
+from console_cache import Cache, RepoData
+from console_repo import Months, chart_view, month_counts, month_span
+from issues import IssueRow
 from console_layout import SITE_URL
 from console_live import LiveData
 from console_pages import api_pages, site_pages
 from console_routes import console_router
-from model import Library
+from model import Library, Point
 from querymodel import QueryModel
 from search import url_encode
 from swap import Swap
@@ -105,8 +107,12 @@ def _cache() raises -> Cache:
 
 
 def _router() raises -> Router:
+    return _router_of(_cache())
+
+
+def _router_of(var c: Cache) raises -> Router:
     var p = unsafe_alloc[Swap[Cache]](1)
-    p.unsafe_write(Swap[Cache](_cache()))
+    p.unsafe_write(Swap[Cache](c^))
     var pc = unsafe_alloc[Swap[CheckRun]](1)
     pc.unsafe_write(Swap[CheckRun](CheckRun()))
     var pm = unsafe_alloc[Swap[QueryModel]](1)
@@ -295,6 +301,95 @@ def test_html_text() raises:
 
 def test_url_encode() raises:
     assert_equal(url_encode("a b/c?&ü"), "a%20b%2Fc%3F%26%C3%BC")
+
+
+comptime DAY_US = Int64(86_400_000_000)
+comptime JAN_1 = 20454
+"""2026-01-01 in days since 1970-01-01; 2026-02-01 is 20485, 2026-03-01 20513."""
+
+
+def _pt(days: Int, lines: Int64) -> Point:
+    return Point(Int64(days) * DAY_US, lines, String("0123456789abcdef0123456789abcdef01234567"), String(), String(), String(), String())
+
+
+def _issue(number: Int64, kind: String, opened: Int, closed: Int, merged: Int = 0) -> IssueRow:
+    return IssueRow(
+        "acme/tomlkit", number, kind, "closed" if closed > 0 else "open", "t", List[String](), "a", 0,
+        Int64(opened) * DAY_US, Int64(opened) * DAY_US, Int64(closed) * DAY_US, Int64(merged) * DAY_US, 0,
+    )
+
+
+def _with_history() raises -> Cache:
+    """`_cache` with acme/tomlkit's 4 commits (Jan and Mar 2026) and three
+    issues and pull requests read; acme/http has neither."""
+    var c = _cache()
+    var d = RepoData()
+    d.pts = [_pt(JAN_1 + 4, 500), _pt(JAN_1 + 19, 900), _pt(JAN_1 + 60, 1500), _pt(JAN_1 + 68, 2000)]
+    d.issues.add(_issue(1, "issue", JAN_1 + 2, JAN_1 + 40))
+    d.issues.add(_issue(2, "pr", JAN_1 + 33, JAN_1 + 34, JAN_1 + 34))
+    d.issues.add(_issue(3, "issue", JAN_1 + 62, 0))
+    c.details["acme/tomlkit"] = d^
+    return c^
+
+
+def test_month_counts() raises:
+    var t = List[List[Int64]]()
+    t.append([Int64(JAN_1 + 3) * DAY_US, 0, Int64(JAN_1 + 61) * DAY_US])
+    t.append([Int64(JAN_1 + 40) * DAY_US])
+    var span = month_span(t)
+    assert_equal(span.count(), 3)
+    assert_equal(month_counts(t[0], span), [1, 0, 1])
+    assert_equal(month_counts(t[1], span), [0, 1, 0])
+    assert_equal(month_span(List[List[Int64]]()).count(), 0)
+    assert_equal(chart_view("issues"), "issues")
+    assert_equal(chart_view("nope"), "lines")
+
+
+def test_repo_tabs() raises:
+    # Lines of Mojo, Commits and Issues as tabs with their totals, Lines of
+    # Mojo shown first, the others a link away (#202).
+    var r = _router_of(_with_history())
+    var page = _body(_get(r, "/repos/acme/tomlkit"))
+    assert_true("Lines of Mojo <span class=mute>&middot; 2,000</span>" in page)
+    assert_true("Commits <span class=mute>&middot; 4</span>" in page)
+    assert_true("Issues <span class=mute>&middot; 3</span>" in page)
+    assert_true("href='/repos/acme/tomlkit?chart=commits#over-time' aria-selected=false" in page)
+    assert_true("<div id=chart-lines role=tabpanel aria-labelledby=tab-lines>" in page)
+    assert_true("<div id=chart-commits role=tabpanel aria-labelledby=tab-commits hidden>" in page)
+    assert_true("aria-label='commits over time'" in page)
+    assert_true("4 commits, counted up by commit date" in page)
+    assert_true("3 issues and pull requests opened (2 issues, 1 pull requests)" in page)
+    assert_true("issues and pull requests together" in page)
+    # Without JS, ?chart= picks the panel shown.
+    var issues = _body(_get(r, "/repos/acme/tomlkit?chart=issues"))
+    assert_true("<div id=chart-issues role=tabpanel aria-labelledby=tab-issues>" in issues)
+    assert_true("<div id=chart-lines role=tabpanel aria-labelledby=tab-lines hidden>" in issues)
+    assert_true("aria-controls='chart-issues'>Issues" in issues)
+    assert_true("aria-selected=true aria-controls='chart-issues'" in issues)
+    # Not read by mojo_issues: the empty state, not 0.
+    var other = _body(_get(r, "/repos/acme/http?chart=issues"))
+    assert_true("Issues <span class=mute>&middot; &ndash;</span>" in other)
+    assert_true("No issues read yet" in other)
+    assert_true("No commits read yet" in other)
+    assert_false("Issues <span class=mute>&middot; 0" in other)
+
+
+def test_repo_json_over_time() raises:
+    var r = _router_of(_with_history())
+    var j = _body(_get(r, "/api/repos/acme/tomlkit"))
+    assert_true(
+        '"over_time":{"lines_of_mojo":2000,"commits":{"total":4,"months":['
+        '{"month":"2026-01","commits":2,"cumulative":2},'
+        '{"month":"2026-02","commits":0,"cumulative":2},'
+        '{"month":"2026-03","commits":2,"cumulative":4}]},'
+        '"issues":{"total":3,"counts":"issues and pull requests","months":['
+        '{"month":"2026-01","opened":1,"closed":0,"cumulative_opened":1,"cumulative_closed":0},'
+        '{"month":"2026-02","opened":1,"closed":2,"cumulative_opened":2,"cumulative_closed":2},'
+        '{"month":"2026-03","opened":1,"closed":0,"cumulative_opened":3,"cumulative_closed":2}]}}'
+        in j
+    )
+    var other = _body(_get(r, "/api/repos/acme/http"))
+    assert_true('"over_time":{"lines_of_mojo":2000,"commits":{"total":4,"months":[]},"issues":null}' in other)
 
 
 def main() raises:

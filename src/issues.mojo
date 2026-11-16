@@ -246,6 +246,11 @@ struct RepoIssues(Copyable, Movable):
     """Open, most recently updated first, at most `ISSUES_SHOWN`."""
     var prs: List[IssueRow]
     """Newest first (by created_at), at most `ISSUES_SHOWN`."""
+    var opened_at: List[Int64]
+    """When each issue and pull request was opened (microseconds), in the
+    order read: the repo page's Issues tab counts them over time."""
+    var closed_at: List[Int64]
+    """When each closed one was closed (a merge closes a pull request too)."""
 
     def __init__(out self):
         self.open_issues = 0
@@ -255,11 +260,18 @@ struct RepoIssues(Copyable, Movable):
         self.closed_prs = 0
         self.issues = List[IssueRow]()
         self.prs = List[IssueRow]()
+        self.opened_at = List[Int64]()
+        self.closed_at = List[Int64]()
 
     def total(self) -> Int:
         return self.open_issues + self.closed_issues + self.open_prs + self.merged_prs + self.closed_prs
 
     def add(mut self, r: IssueRow):
+        if r.created_at > 0:
+            self.opened_at.append(r.created_at)
+        var closed = r.closed_at if r.closed_at > 0 else r.merged_at
+        if r.state != "open" and closed > 0:
+            self.closed_at.append(closed)
         if r.kind == "pr":
             if r.state == "open":
                 self.open_prs += 1

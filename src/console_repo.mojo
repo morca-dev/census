@@ -1,5 +1,5 @@
 """The console's page of one repo (`/repos/<owner>/<name>`): its title block,
-lines of Mojo over time, dependencies, similar repos, stars per month,
+lines of Mojo, commits and issues over time (as tabs, `?chart=`), dependencies, similar repos, stars per month,
 contributors per month, releases and tags, issues and pull requests, migrations and latest commits."""
 
 from flare.http import Request, Response, html_escape, internal_error, not_found, redirect
@@ -9,13 +9,13 @@ from model import Library, MonthActivity, Point, day
 from similar import Neighbor
 from categories import CATEGORIES_VERSION, VOTERS, category_title
 from committype import commit_type_keys, commit_type_title, has_subjects, typed_commits
-from overview import month_label, tool_code, unversioned
+from overview import DAY_US, month_label, month_of_days, tool_code, unversioned
 from versions import source_label, usable
 
-from console_cache import Cache
+from console_cache import Cache, RepoData
 from issues import IssueRow, RepoIssues
 from console_how import MORCA_UI
-from console_layout import _age, _chips, _empty, _n, _now_days, _or_dash, _page, _this_month
+from console_layout import _age, _chips, _empty, _help, _n, _now_days, _or_dash, _page, _this_month
 from console_migrations_body import _line_chart
 
 
@@ -50,6 +50,251 @@ def _chart(points: List[Point]) -> String:
         "<polyline fill=none stroke='var(--ember)' stroke-width=2 stroke-linejoin=round points='", pts, "'/></svg>",
         "<p class=mute>", day(t0), " to ", day(t1), "; peak ", _n(top), " lines</p></div>",
     )
+
+
+@fieldwise_init
+struct Months(Copyable, Movable):
+    """A run of months, `first` to `last` (months since 1970-01); `last` is
+    -1 when there is none."""
+
+    var first: Int
+    var last: Int
+
+    def count(self) -> Int:
+        return max(self.last - self.first + 1, 0)
+
+
+def _month_of(at: Int64) -> Int:
+    """Months since 1970-01 of `at` (microseconds since the epoch)."""
+    return month_of_days(Int(at // DAY_US))
+
+
+def month_span(series: List[List[Int64]]) -> Months:
+    """The months from the earliest to the latest time in `series`
+    (microseconds; 0 for none, left out)."""
+    var first = -1
+    var last = -1
+    for ref s in series:
+        for t in s:
+            if t <= 0:
+                continue
+            var m = _month_of(t)
+            if first < 0 or m < first:
+                first = m
+            last = max(last, m)
+    if last < 0:
+        return Months(0, -1)
+    return Months(first, last)
+
+
+def month_counts(times: List[Int64], span: Months) -> List[Int]:
+    """How many of `times` fall in each month of `span`."""
+    var out = List[Int](length=span.count(), fill=0)
+    for t in times:
+        if t <= 0:
+            continue
+        var k = _month_of(t) - span.first
+        if k >= 0 and k < len(out):
+            out[k] += 1
+    return out^
+
+
+def commit_times(pts: List[Point]) -> List[Int64]:
+    var out = List[Int64]()
+    for ref p in pts:
+        out.append(p.at)
+    return out^
+
+
+def _cum_chart(
+    series: List[List[Int64]],
+    names: List[String],
+    colors: List[String],
+    aria: String,
+    note: String,
+) -> String:
+    """Each of `series` (times in microseconds) counted up over time, one
+    line each, the first with the area under it, in the style of `_chart`;
+    `note` (HTML) follows the date range."""
+    var sorted = List[List[Int64]]()
+    var t0 = Int64(0)
+    var t1 = Int64(0)
+    var top = 1
+    var seen = False
+    for ref s in series:
+        var x = List[Int64]()
+        for t in s:
+            if t > 0:
+                x.append(t)
+        sort(x)
+        if len(x) > 0:
+            if not seen or x[0] < t0:
+                t0 = x[0]
+            if not seen or x[len(x) - 1] > t1:
+                t1 = x[len(x) - 1]
+            seen = True
+        top = max(top, len(x))
+        sorted.append(x^)
+    var w = 900
+    var h = 180
+    var span = max(t1 - t0, Int64(1))
+    var svg = String(
+        "<div class=card><svg viewBox='-4 -4 ", w + 8, " ", h + 8, "' role=img aria-label='",
+        html_escape(aria), "'>",
+    )
+    var legend = String("<ul class=legend>")
+    for si in range(len(sorted)):
+        ref x = sorted[si]
+        var color = colors[si] if si < len(colors) else String("var(--c", si % 6, ")")
+        var n = len(x)
+        var pts = String()
+        var first_x = 0
+        var y = h
+        for i in range(n):
+            var px = Int((x[i] - t0) * Int64(w) // span)
+            if i == 0:
+                first_x = px
+                pts.write(px, ",", h, " ")
+            # One point per pixel column: the count at its last time.
+            if i + 1 < n and Int((x[i + 1] - t0) * Int64(w) // span) == px:
+                continue
+            y = h - (i + 1) * (h - 10) // top
+            pts.write(px, ",", y, " ")
+        if n > 0:
+            pts.write(w, ",", y)
+            if si == 0:
+                svg.write(
+                    "<polygon fill='", color, "' fill-opacity='.12' points='", first_x, ",", h, " ", pts,
+                    " ", w, ",", h, "'/>",
+                )
+            svg.write(
+                "<polyline fill=none stroke='", color,
+                "' stroke-width=2 stroke-linejoin=round points='", pts, "'/>",
+            )
+        legend.write(
+            "<li><i style='background:", color, "'></i>", html_escape(names[si] if si < len(names) else String()),
+            " <b>", _n(Int64(n)), "</b></li>",
+        )
+    svg.write("</svg>")
+    legend.write("</ul>")
+    return String(
+        svg, legend if len(sorted) > 1 else String(),
+        "<p class=mute>", day(t0), " to ", day(t1), "; ", note, "</p></div>",
+    )
+
+
+def chart_view(param: String) -> String:
+    """The tab of the chart over time `?chart=` names (`commits`, `issues`),
+    else the default, `lines` (Lines of Mojo)."""
+    if param == "commits" or param == "issues":
+        return param
+    return String("lines")
+
+
+comptime OVER_TIME_HELP = (
+    "<b>Lines of Mojo</b>: its lines of Mojo at each commit mojo_history read."
+    " <b>Commits</b>: those commits (the first-parent history from HEAD) counted up over time;"
+    " the total is the Commits tile's."
+    " <b>Issues</b>: issues and pull requests together (GitHub's issues list has both), counted"
+    " up over time by when they were opened, and beside them the ones closed or merged;"
+    " from mojo.issues, once mojo_issues has read the repo."
+)
+
+
+def _tab(repo: String, view: String, label: String, on: Bool) -> String:
+    """A tab of `_over_time`: a link to the page with that chart, so it works
+    without JS, which then switches the panels in place."""
+    return String(
+        "<a role=tab id='tab-", view, "' data-view=", view, " href='/repos/", html_escape(repo),
+        String("?chart=", view) if view != "lines" else String(), "#over-time' aria-selected=",
+        "true" if on else "false", " aria-controls='chart-", view, "'>", label, "</a>",
+    )
+
+
+def _count_label(title: String, n: Int64) -> String:
+    return String(title, " <span class=mute>&middot; ", _n(n), "</span>")
+
+
+comptime TABS_JS = (
+    "<script>(()=>{const s=document.getElementById('over-time');if(!s)return;"
+    "const ts=s.querySelectorAll('[role=tab]');ts.forEach(t=>t.addEventListener('click',e=>{"
+    "if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button)return;e.preventDefault();"
+    "ts.forEach(o=>{const on=o===t;o.setAttribute('aria-selected',String(on));"
+    "document.getElementById(o.getAttribute('aria-controls')).hidden=!on});"
+    "const u=new URL(location.href),v=t.dataset.view;"
+    "if(v==='lines')u.searchParams.delete('chart');else u.searchParams.set('chart',v);"
+    "history.replaceState(null,'',u.pathname+u.search+u.hash)}))})()</script>"
+)
+"""Switches `_over_time`'s tabs without a reload, keeping `?chart=` in the
+address; without JS each tab is a link to the page with its chart."""
+
+
+def over_time(repo: String, l: Library, data: RepoData, view: String) -> String:
+    """The tabs "Lines of Mojo · n | Commits · n | Issues · n" and their
+    charts, `view`'s shown: Lines of Mojo (`_chart`), the commits counted up
+    over time, and the issues and pull requests opened and closed (the empty
+    state before mojo_issues has read the repo)."""
+    ref x = data.issues
+    var read = x.total() > 0
+    var h = String(
+        "<section id=over-time><div class=tabbar><div class=tabs role=tablist aria-label='Over time'>",
+        _tab(repo, "lines", _count_label("Lines of Mojo", l.mojo_lines), view == "lines"),
+        _tab(repo, "commits", _count_label("Commits", Int64(l.commits)), view == "commits"),
+        _tab(
+            repo, "issues",
+            _count_label("Issues", Int64(x.total())) if read else String(
+                "Issues <span class=mute>&middot; &ndash;</span>"
+            ),
+            view == "issues",
+        ),
+        "</div>", _help("over-time-help", "these charts", OVER_TIME_HELP), "</div>",
+    )
+    h.write(
+        "<div id=chart-lines role=tabpanel aria-labelledby=tab-lines", " hidden" if view != "lines" else "", ">",
+        _chart(data.pts), "</div>",
+    )
+    h.write(
+        "<div id=chart-commits role=tabpanel aria-labelledby=tab-commits", " hidden" if view != "commits" else "", ">",
+    )
+    if len(data.pts) == 0:
+        h.write(_empty("No commits read yet", "The history pipeline hasn't reached this repository."))
+    else:
+        var series = List[List[Int64]]()
+        series.append(commit_times(data.pts))
+        var names: List[String] = ["Commits"]
+        var colors: List[String] = ["var(--ember)"]
+        h.write(
+            _cum_chart(
+                series, names, colors, "commits over time",
+                String(_n(Int64(l.commits)), " commits, counted up by commit date"),
+            )
+        )
+    h.write(
+        "</div><div id=chart-issues role=tabpanel aria-labelledby=tab-issues", " hidden" if view != "issues" else "", ">",
+    )
+    if not read:
+        h.write(_empty("No issues read yet", String(
+            "<a href='", MORCA_UI, "/pipelines/mojo_issues' rel=noopener>mojo_issues</a>",
+            " hasn't read this repository's issues and pull requests yet.",
+        )))
+    else:
+        var series = List[List[Int64]]()
+        series.append(x.opened_at.copy())
+        series.append(x.closed_at.copy())
+        var names: List[String] = ["Opened", "Closed or merged"]
+        var colors: List[String] = ["var(--c0)", "var(--c2)"]
+        h.write(
+            _cum_chart(
+                series, names, colors, "issues and pull requests opened and closed over time",
+                String(
+                    _n(Int64(x.total())), " issues and pull requests opened (",
+                    _n(Int64(x.open_issues + x.closed_issues)), " issues, ",
+                    _n(Int64(x.open_prs + x.merged_prs + x.closed_prs)), " pull requests), from GitHub by mojo_issues",
+                ),
+            )
+        )
+    h.write("</div></section>", TABS_JS)
+    return h^
 
 
 comptime RELEASES_SHOWN = 30
@@ -325,7 +570,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             _stat("Packaging", _or_dash(l.packaging)),
             _stat("License", _or_dash(l.license)),
             "</div></div>",
-            "<h2>Lines of Mojo</h2>", _chart(pts),
+            "<h2>Over time</h2>", over_time(repo, l, data, chart_view(req.query_param("chart"))),
             _deps_section(l),
             _similar_section(repo, c),
             "<h2>Stars per month</h2>",
