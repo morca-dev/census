@@ -436,7 +436,7 @@ def overview(req: Request, c: Cache) raises -> Response:
             ),
             _kpi(
                 "Commits", _n(Int64(ov.commits)),
-                String(_signed(Int64(ov.commits_30)), " in 30 days"),
+                String("in the ", _n(Int64(ov.with_history)), " repos whose history is read"),
                 help=_help("h-kpi-commits", "Commits", hist_help),
             ),
             _kpi(
@@ -596,8 +596,8 @@ def overview(req: Request, c: Cache) raises -> Response:
         if len(c.rising) > 0:
             h.write(
                 "<div class=tbl><table><thead><tr>",
-                "<th>Repository</th><th class=num>Stars 30d</th><th class=num>Stars</th>",
-                "<th class=num>Forks 30d</th>",
+                "<th>Repository</th><th class=num>Stars, 30 days</th><th class=num>Stars</th>",
+                "<th class=num>Forks, 30 days</th>",
                 "<th class=num>Used by</th><th class=num>Score</th></tr></thead><tbody>",
             )
             for i in range(len(c.rising)):
@@ -624,7 +624,7 @@ def overview(req: Request, c: Cache) raises -> Response:
         if len(c.active_repos) > 0:
             h.write(
                 "<div class=tbl><table><thead><tr><th>Repository</th><th class=num>Commits, 30 days</th>",
-                "<th class=num>Lines of Mojo</th></tr></thead><tbody>",
+                "<th class=num>Lines, 30 days</th></tr></thead><tbody>",
             )
             for i in range(len(c.active_repos)):
                 h.write(
@@ -645,13 +645,13 @@ def overview(req: Request, c: Cache) raises -> Response:
                     "The repos the most census repos declare a dependency on, in the manifests at"
                     " their HEAD (pixi, magic, pyproject, recipe): by GitHub URL, package name or"
                     " repo name. A dependency is internal when both repos have the same GitHub"
-                    " owner; Other owners counts the rest. When two or more of one owner's repos"
+                    " owner; Outside the org counts the rest. When two or more of one owner's repos"
                     " would be listed they are one row, owner/*: Used by counts the distinct repos"
                     " that depend on any of them, and Stars and Forks are their sums.",
                 ),
                 "</h2>",
                 "<div class=tbl><table><thead><tr><th>Repository</th><th class=num>Used by</th>",
-                "<th class=num>Other owners</th>",
+                "<th class=num>Outside the org</th>",
                 "<th class=num>Stars</th><th class=num>Forks</th></tr></thead><tbody>",
             )
             for ref d in c.depended:
