@@ -255,18 +255,32 @@ def test_git_stall_is_detected() raises:
     )
 
 
-def main() raises:
+def before_tests() raises:
+    """A server a run before this one left behind is not this one's."""
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-fetch")
+    if exists(String(dir, "/pid")):
+        _ = run(String("kill $(cat '", dir, "/pid') 2>/dev/null; true"))
     _ = run(String("rm -rf '", dir, "'"))
+
+
+def after_tests() raises:
+    """Stops the server by the PID it was started as."""
+    var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-fetch")
+    if exists(String(dir, "/pid")):
+        _ = run(String("kill $(cat '", dir, "/pid') 2>/dev/null; true"))
+    _ = run(String("rm -rf '", dir, "'"))
+
+
+def main() raises:
+    # scripts/test.sh, which runs the tests from one binary, calls
+    # before_tests and after_tests as this does.
+    before_tests()
     var failed = False
     try:
         TestSuite.discover_tests[__functions_in_module()]().run()
     except e:
         failed = True
         print(e)
-    # Stop the server by the PID it was started as.
-    if exists(String(dir, "/pid")):
-        _ = run(String("kill $(cat '", dir, "/pid') 2>/dev/null; true"))
-    _ = run(String("rm -rf '", dir, "'"))
+    after_tests()
     if failed:
         raise Error("test_fetch failed")
