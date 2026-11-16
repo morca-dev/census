@@ -3,6 +3,12 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.11.0 - 2026-11-16
+
+- **Overview column names say what they count:** Outside the org, Lines, 30 days, and one spelling for the 30-day columns. (#201)
+
+- **Repo page tabs**: the chart over time has Lines of Mojo, Commits and Issues tabs, each titled with its total. (#203)
+
 ## 1.10.0 - 2026-11-15
 
 - **Upgrade steps checked in CI:** every `morca backfill` step of upgrade.toml is dry-run against earlier runs (`pixi run test-upgrade`, morca-mojo 0.31.0). (#194)
