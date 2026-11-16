@@ -76,3 +76,25 @@ morca-mojo = { git = "https://github.com/morca-dev/morca.git", rev = "b640a873bc
 encoder-mojo = { git = "https://github.com/magmalake/encoder.mojo.git", rev = "34d8651903c4a4f94d9025de15a88cd3693e2df7" }
 postgresql = ">=18.4,<19"
 git = ">=2.56.0,<3"
+
+# Development only: `ouromo`, an experimental build of the 1.2.0 compiler
+# with a per-function object cache. `pixi run -e ouromo dev-build
+# pipelines/mojo_issues.mojo` rebuilds one program in a bit more than half
+# the time; the binaries are a few percent slower and larger, so nothing
+# that ships is built here. No linux-aarch64 package exists.
+[feature.ouromo]
+channels = ["https://prefix.dev/winding-lines/ouromo"]
+platforms = ["osx-arm64", "linux-64"]
+
+[feature.ouromo.dependencies]
+ouromo = "==1.2.0.1"
+
+# conda-forge's current postgresql needs macOS 13.3; pixi assumes 13.0.
+[feature.ouromo.system-requirements]
+macos = "13.3"
+
+[feature.ouromo.tasks]
+dev-build = "sh scripts/dev-build.sh"
+
+[environments]
+ouromo = ["ouromo"]
