@@ -1,0 +1,78 @@
+name: ouromo-stats
+
+# A measurement, not a check: CI's test job on the last commits of main, each
+# built and tested with the official compiler and with `ouromo` and its split
+# cache, on one runner (scripts/ouromo-stats/run.sh). Runs only on its own
+# branch and when started by hand; the branch is never merged.
+on:
+  push:
+    branches: [ouromo-ci-stats]
+  workflow_dispatch:
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: stats
+      - run: git config --global maintenance.auto false && git config --global gc.auto 0
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: v0.78.0
+          run-install: false
+      - name: ouromo
+        run: cd stats && pixi install -e ouromo && .pixi/envs/ouromo/bin/ouromo --version
+      - name: The checkout the script moves from commit to commit
+        run: git clone -q https://github.com/${{ github.repository }} census
+      - name: Measure
+        env:
+          MODULAR_TELEMETRY_ENABLED: 'false'
+          COMMITS: f6e40b8 71bd558 a572f17 2344e9d 26ba36e caf587e 661678d a18703f
+        run: |
+          nproc; free -g
+          mkdir -p "$RUNNER_TEMP/out"
+          stats/scripts/ouromo-stats/run.sh "$PWD/census" "$PWD/stats/.pixi/envs/ouromo/bin/ouromo" "$RUNNER_TEMP/out/stats.tsv" $COMMITS
+      - name: The cache as CI would save it
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/out"
+          ls split-cache | wc -l; du -sh split-cache
+          time tar -cf - split-cache | zstd -T0 -3 > split-cache.tar.zst
+          ls -la split-cache.tar.zst
+          time zstd -dc split-cache.tar.zst | tar -xf - -C "$(mktemp -d)"
+          rm split-cache.tar.zst
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ouromo-stats
+          path: |
+            ${{ runner.temp }}/out/stats.tsv
+            ${{ runner.temp }}/out/logs
+
+  # How to build and run the tests: the JIT per test, a binary per test, or
+  # one binary of every test, each with and without ouromo
+  # (scripts/ouromo-stats/test-variants.sh).
+  test-variants:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - run: git config --global maintenance.auto false && git config --global gc.auto 0
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: v0.78.0
+          run-install: false
+      - run: pixi install && pixi install -e ouromo && cp .pixi/envs/ouromo/bin/ouromo .pixi/envs/default/bin/ouromo
+      - name: Measure
+        env:
+          MODULAR_TELEMETRY_ENABLED: 'false'
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          pixi run bash scripts/ouromo-stats/test-variants.sh "$RUNNER_TEMP/out/variants.tsv"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ouromo-test-variants
+          path: ${{ runner.temp }}/out
