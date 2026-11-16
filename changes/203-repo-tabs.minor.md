@@ -1,0 +1,1 @@
+- **Repo page tabs**: the chart over time has Lines of Mojo, Commits and Issues tabs, each titled with its total. (#203)

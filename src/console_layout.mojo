@@ -82,7 +82,8 @@ footer .notice{flex-basis:100%;max-width:none;color:var(--ember)}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:0 0 24px;overflow-x:auto}
 .tabs a{color:var(--muted);padding:8px 14px;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .tabs a:hover{color:var(--text);text-decoration:none}
-.tabs a[aria-current=page]{color:var(--text);border-bottom-color:var(--ember);font-weight:600}
+.tabs a[aria-current=page],.tabs a[aria-selected=true]{color:var(--text);border-bottom-color:var(--ember);font-weight:600}
+.tabbar{display:flex;align-items:center;gap:8px;margin:0 0 16px}.tabbar .tabs{flex:1;margin:0}
 td.what{white-space:normal;min-width:30ch}
 .card text{fill:var(--muted);font:11px var(--mono)}
 .card .grid{stroke:var(--border);stroke-width:1}

@@ -12,7 +12,9 @@ from model import Library, stored_total
 from overview import ARCHIVE_START, RISING_FORK_WEIGHT, RISING_USED_BY_WEIGHT, archive_days_due
 from search import url_decode, version_bucket, version_family
 
-from console_cache import Cache
+from console_cache import Cache, RepoData
+from console_repo import commit_times, month_counts, month_span
+from overview import month_label
 from console_list import _matches, meaning_hits
 from similar import Neighbor
 from issues import IssueRow
@@ -283,6 +285,50 @@ def _contributors_json(x: RepoContributors) -> String:
     return out^
 
 
+def over_time_json(l: Library, data: RepoData) -> String:
+    """The repo page's tabs as series: `{"lines_of_mojo":n,"commits":{"total":n,
+    "months":[{"month","commits","cumulative"}]},"issues":{"total":n,
+    "counts":"issues and pull requests","months":[{"month","opened","closed",
+    "cumulative_opened","cumulative_closed"}]}}`, every month from the first
+    to the last; `"issues"` is null before mojo_issues has read the repo."""
+    var out = String('{"lines_of_mojo":', l.mojo_lines, ',"commits":{"total":', l.commits, ',"months":[')
+    var times = List[List[Int64]]()
+    times.append(commit_times(data.pts))
+    var span = month_span(times)
+    var counts = month_counts(times[0], span)
+    var sum = 0
+    for k in range(len(counts)):
+        sum += counts[k]
+        out.write(
+            "," if k > 0 else "", '{"month":', _q(month_label(span.first + k)),
+            ',"commits":', counts[k], ',"cumulative":', sum, "}",
+        )
+    out += "]}"
+    ref x = data.issues
+    if x.total() == 0:
+        out += ',"issues":null}'
+        return out^
+    var both = List[List[Int64]]()
+    both.append(x.opened_at.copy())
+    both.append(x.closed_at.copy())
+    var ispan = month_span(both)
+    var opened = month_counts(both[0], ispan)
+    var closed = month_counts(both[1], ispan)
+    out.write(',"issues":{"total":', x.total(), ',"counts":"issues and pull requests","months":[')
+    var so = 0
+    var sc = 0
+    for k in range(len(opened)):
+        so += opened[k]
+        sc += closed[k]
+        out.write(
+            "," if k > 0 else "", '{"month":', _q(month_label(ispan.first + k)),
+            ',"opened":', opened[k], ',"closed":', closed[k],
+            ',"cumulative_opened":', so, ',"cumulative_closed":', sc, "}",
+        )
+    out += "]}}"
+    return out^
+
+
 def repo_json(req: Request, c: Cache) raises -> Response:
     try:
         var repo = String(req.param("owner"), "/", req.param("name"))
@@ -365,7 +411,10 @@ def repo_json(req: Request, c: Cache) raises -> Response:
                 out += ","
             first = False
             out.write(_issue_json(r))
-        out.write(']},"contributors":', _contributors_json(data.contributors), ',"similar":[')
+        out.write(
+            ']},"contributors":', _contributors_json(data.contributors),
+            ',"over_time":', over_time_json(found.value(), data), ',"similar":[',
+        )
         first = True
         for ref n in c.similar.get(repo, List[Neighbor]()):
             if not first:
