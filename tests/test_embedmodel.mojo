@@ -2,6 +2,7 @@ from std.os import makedirs, setenv, unsetenv
 from std.os.path import exists
 from std.testing import TestSuite, assert_equal, assert_true
 
+from command import remove_tree
 from embedmodel import MIRROR_PATH, ensure_model, mirror_of, model_rev
 
 
@@ -27,6 +28,8 @@ def test_mirror_of_overrides() raises:
 
 def test_fetches_from_mirror() raises:
     var root = String("build/test_embedmodel")
+    # A run before this one left its model here, and nothing would be fetched.
+    remove_tree(root)
     var mirror = root + "/mirror"
     var dir = root + "/model"
     makedirs(mirror + "/1_Pooling", exist_ok=True)
