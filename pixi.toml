@@ -54,12 +54,12 @@ mojo-compiler = "==1.2.0"
 mojo = "==1.2.0"
 json_mlake = { git = "https://github.com/magmalake/json_mlake.git", rev = "27c05c1c0c2881abfb33ce8eefae4d44d8b602a9" }
 threads-mojo = { git = "https://github.com/magmalake/threads.mojo.git", rev = "f45e780a8de77278c140cee36904e46e93e0ca1c" }
-flare_mlake = { git = "https://github.com/magmalake/flare_mlake.git", rev = "b2c5823dc0f9ef95906978a9bdfda1d1ce505fa8" }
-k8s-mojo = { git = "https://github.com/magmalake/k8s.mojo.git", rev = "1aa5b087c06e41313f0f629509260062fdac661b" }
+flare_mlake = { git = "https://github.com/magmalake/flare_mlake.git", rev = "898dd6a76692a55750688a6c53d917c8e797759b" }
+k8s-mojo = { git = "https://github.com/magmalake/k8s.mojo.git", rev = "ab456806084467af45e9a50432c27aaade4f4338" }
 memory-region-mojo = { git = "https://github.com/magmalake/memory-region.mojo.git", rev = "40068c4f95ea659e9b78aa91ced45420b07e3e6e" }
 arrow-mlake-mojo = { git = "https://github.com/magmalake/arrow-mlake.mojo.git", rev = "d2fc48903dc4c6d7c0a251a9efb1337e138c8908" }
 objectstore-mojo = { git = "https://github.com/magmalake/objectstore.mojo.git", rev = "ff66975c095f392695facc1b6dd56823dec914bc" }
-dista-mojo = { git = "https://github.com/morca-dev/dista", rev = "e8065b3650b077b3c93054d4bdc07a0a591bdafa" }
+dista-mojo = { git = "https://github.com/morca-dev/dista", rev = "bc35e01ec26a9b29cdcdcb50d7757441ad99f0df" }
 postgres-mojo = { git = "https://github.com/magmalake/postgres.mojo", rev = "324b2bb61e2e80327654abecf70fd4b2defbc50d" }
 brotli-mojo = { git = "https://github.com/magmalake/brotli.mojo.git", rev = "dcbf840d22e3deaf24c587d12d28570a9a882b7f" }
 thrift-mojo = { git = "https://github.com/magmalake/thrift.mojo.git", rev = "21cdbce67d22d72e88e88a60e2f168b05b4ef9fa" }
@@ -73,7 +73,7 @@ avro-mojo = { git = "https://github.com/magmalake/avro.mojo.git", rev = "d5b26cc
 roaring-mojo = { git = "https://github.com/magmalake/roaring.mojo.git", rev = "a90a7bd30cf1c21403a29059282072e93fbeeee2" }
 hashes-mojo = { git = "https://github.com/magmalake/hashes.mojo.git", rev = "395aca597f9410bd0511df44d972f14b10a8b01d" }
 iceberg-mojo = { git = "https://github.com/magmalake/iceberg.mojo.git", rev = "813682073914eb65bb653eef1681325221cf410c" }
-morca-mojo = { git = "https://github.com/morca-dev/morca.git", rev = "b640a873bc30bb62175a0da912272daac2ab8be2" }
+morca-mojo = { git = "https://github.com/morca-dev/morca.git", rev = "876b6eb0d2ca35cec34b460013ac5ab6f60e38d3" }
 # mojo_embed's sentence embeddings; brings max-core (its matmul kernels).
 encoder-mojo = { git = "https://github.com/magmalake/encoder.mojo.git", rev = "34d8651903c4a4f94d9025de15a88cd3693e2df7" }
 postgresql = ">=18.4,<19"
