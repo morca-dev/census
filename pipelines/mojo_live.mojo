@@ -2,7 +2,7 @@
 records new commits in mojo.live_commits, for the console's Live page.
 
 Hourly partitions from 2026-11-11T00, one run an hour at :00
-(`fills=Current`) that keeps polling until the hour ends: every
+(`fire=Current`) that keeps polling until the hour ends: every
 MOJO_LIVE_POLL_S seconds (1200) it asks GitHub's GraphQL API for the heads
 of all of `mojo.repos` (`live.heads_query`, 100 a query, 1 rate-limit point
 each), and for each repository whose head moved, its latest commits
@@ -263,7 +263,7 @@ comptime MojoLive = Pipeline[
     Live,
     partitions=Hourly["2026-11-11T00"],
     schedule=Cron["0 * * * *"],
-    fills=Current,
+    fire=Current,
     catchup=False,
 ]
 

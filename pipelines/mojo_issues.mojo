@@ -1,7 +1,7 @@
 """Fetches every Mojo repository's issues and pull requests into mojo.issues.
 
 Daily partitions from 2026-11-11, each filled at 08:00 UTC for that day
-(`fills=Current`), two hours after mojo_stats so the two don't share an
+(`fire=Current`), two hours after mojo_stats so the two don't share an
 hour of GitHub's rate limit. For each repository in `mojo.repos` the step
 asks GitHub for what changed since the newest `updated_at` it has for it
 (`GET /repos/{owner}/{repo}/issues?state=all&since=…`, which lists pull
@@ -133,7 +133,7 @@ comptime MojoIssues = Pipeline[
     Fetch,
     partitions=Daily["2026-11-11"],
     schedule=Cron["0 8 * * *"],
-    fills=Current,
+    fire=Current,
     catchup=False,
 ]
 
