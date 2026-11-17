@@ -1,1 +1,0 @@
-- **morca-mojo 0.35.0:** pipelines say `fire=` for `fills=`; the UI's Retry is Resume, and `morca start` runs have trigger `cli`. (#211)
