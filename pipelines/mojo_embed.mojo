@@ -221,7 +221,7 @@ comptime MojoEmbed = Pipeline[
     Embed,
     partitions=Daily["2026-11-10"],
     schedule=Cron["0 7 * * *"],
-    fills=Current,
+    fire=Current,
     catchup=False,
 ]
 

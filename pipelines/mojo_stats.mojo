@@ -3,7 +3,7 @@ numbers each day into mojo.repo_stats, and records which of the other
 repositories they depend on are forks, and of what, in mojo.dep_forks.
 
 Daily partitions from 2026-11-08, the first day it ran, each filled at
-06:00 UTC for that day (`fills=Current`); GitHub only gives the current
+06:00 UTC for that day (`fire=Current`); GitHub only gives the current
 numbers, so days before it can't be filled. The step asks GitHub
 about each repository in `mojo.repos` (`GET /repos/{owner}/{repo}`, one
 request each) and writes one row per repository to `mojo.repo_stats`,
@@ -436,7 +436,7 @@ comptime Refresh = Step[
     # `append` replaces the table, as meant.
     replaces=[REPO_STATS, DEP_FORKS],
 ]
-# A `Cron` schedule fires on its own. `fills=Current` makes a fire fill the
+# A `Cron` schedule fires on its own. `fire=Current` makes a fire run the
 # partition its time falls in (the day itself, not the day before, which is
 # the default), and `catchup=False` starts only the latest fire if the
 # scheduler was down for several: GitHub only gives the current numbers, so a
@@ -446,7 +446,7 @@ comptime MojoStats = Pipeline[
     Refresh,
     partitions=Daily["2026-11-08"],
     schedule=Cron["0 6 * * *"],  # 06:00 UTC, for that day
-    fills=Current,
+    fire=Current,
     catchup=False,
 ]
 
