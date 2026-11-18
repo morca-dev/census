@@ -1,0 +1,1 @@
+- **morca-mojo 0.37.0:** the UI serves a robots.txt that turns all crawlers away and marks its pages noindex (morca #542). (#215)
