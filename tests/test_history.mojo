@@ -15,7 +15,7 @@ def _sh(cmd: String, timeout_ms: Int = 0) raises -> Tuple[Int, String]:
     """`cmd` run with `sh` (the tests set repositories up with it; the census
     itself runs git without a shell)."""
     return command(["/bin/sh", "-c", cmd], timeout_ms)
-from history import CommitRow, MigrationRow, TagRow, join_tags, parse_tags
+from history import join_tags, parse_tags
 
 
 def _log() -> String:

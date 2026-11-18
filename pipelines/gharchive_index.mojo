@@ -17,7 +17,6 @@ events are skipped.
 """
 
 from std.os import getenv, setenv
-from std.time import perf_counter_ns
 
 from dista import ObjectRef, Task
 from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, morca_main

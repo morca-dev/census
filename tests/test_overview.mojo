@@ -12,7 +12,6 @@ from listing import (
     NEW_30D,
     NEW_LAST_MONTH,
     NEW_MONTH,
-    ListQuery,
     list_url,
     parse_list_query,
     select_repos,

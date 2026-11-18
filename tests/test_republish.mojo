@@ -9,7 +9,7 @@ fork of it (`deps.republishes`).
 
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
-from deps import DEPENDS, Dep, ForkOf, PROVIDES, RepoDep, manifest_deps, republishes, resolve
+from deps import Dep, ForkOf, PROVIDES, RepoDep, manifest_deps, republishes, resolve
 from detect import Candidate, parse_search, scan_event, search_queries
 from jscan import Range, scan_event as scan_line, text, timestamp_micros
 

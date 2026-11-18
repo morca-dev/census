@@ -37,7 +37,6 @@ from dista import ObjectRef, Task
 from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, morca_main
 from morca.civil import now
 from morca.tables import BatchBuilder, Table, append, ensure_table, scan, table
-from parquet import RecordBatch
 
 from activity import (
     ActivityRow,

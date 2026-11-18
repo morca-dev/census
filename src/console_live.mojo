@@ -18,8 +18,7 @@ from console_layout import _empty, _page
 from console_pages import page_json, page_line
 from jscan import micros_to_iso
 from lake import try_load
-from live import Freshness, LiveCommit, freshness
-from model import day
+from live import LiveCommit, freshness
 from swap import Swap
 from threads import OpaquePtr
 

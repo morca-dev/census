@@ -174,7 +174,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: magmalake/customs@v0.3.0
+      - uses: magmalake/customs@v0.4.0
 
   # `test` and `image`, the checks main's ruleset requires: each passes once
   # every architecture's job has (skipped counts).

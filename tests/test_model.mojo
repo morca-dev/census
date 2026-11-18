@@ -12,7 +12,7 @@ from std.time import perf_counter_ns
 
 from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
 from iceberg.nested import ColumnTree
-from iceberg.catalog.filesystem import FilesystemCatalog, Table
+from iceberg.catalog.filesystem import FilesystemCatalog
 from iceberg.schema import Schema
 from morca.tables import Table as LakeTable
 from iceberg.json import json_quote

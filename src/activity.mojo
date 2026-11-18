@@ -15,7 +15,7 @@ from dista import Seq
 from morca.tables import BatchBuilder, load_dataset
 from parquet import RecordBatch
 
-from cols import bool_at, col, i32_at, i64_at, str_at, str_range
+from cols import bool_at, col, i32_at, i64_at, str_at
 from days import day_text, days_of
 from jscan import Range, field, text, timestamp_micros
 from lake import (

@@ -10,7 +10,6 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from checks import (
     Check,
     CheckRun,
-    PageFacts,
     RepoFacts,
     Tops,
     notice,

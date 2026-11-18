@@ -18,7 +18,7 @@ from dista import Seq
 from contributors import AuthorMonth, read_authors
 from filemix import FileMix
 
-from command import STDERR_DROP, STDERR_MERGE, TIMED_OUT, git, make_dirs, remove_tree
+from command import STDERR_DROP, STDERR_MERGE, git, make_dirs, remove_tree
 from retry import backoff_ms, env_int, log_retry, nap_ms
 from deps import names_mojo_pkg
 from versions import (

@@ -1,7 +1,7 @@
 # The input text, hashes and vector bytes of mojo.repo_embeddings, and a
 # batch of rows read back as written. No model needed.
 
-from std.testing import assert_equal, assert_not_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_not_equal, TestSuite
 
 from embedtext import (
     EmbedRow,
