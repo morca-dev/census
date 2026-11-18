@@ -15,7 +15,6 @@ from iceberg.io import FileIO
 from iceberg.schema import Schema
 from iceberg.transforms import PartitionField, PartitionSpec, parse_transform
 from lake import EVENTS_SCHEMA
-from morca.tables import DataFiles as FileEntries
 from morca.tables import Table, write_files
 
 

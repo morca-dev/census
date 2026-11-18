@@ -36,7 +36,7 @@ from morca.civil import now
 from morca.tables import BatchBuilder, append, ensure_table, scan, table
 from parquet import RecordBatch
 
-from cols import col, i64_at, str_at, str_range
+from cols import col, i64_at, str_at
 from detect import Candidate, RepoInfo, Verdict, note, search_candidates, verify
 from hourindex import candidates_from
 from days import days_of

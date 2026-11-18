@@ -28,7 +28,6 @@ from morca import Ctx, Gather, Name, Pipeline, Step, Tasks, morca_main
 from morca.keyed import Keyed
 from morca.tables import ensure_table, scan, table
 from dista import Seq
-from parquet import RecordBatch
 
 from history import CommitRow, History, MigrationRow, TagRow, read_history
 from historyrows import (

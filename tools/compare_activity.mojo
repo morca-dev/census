@@ -14,7 +14,7 @@ from std.time import perf_counter_ns
 from activity import Acc, ReleaseRow, add_event, day_activity, encode_job, finish
 from cols import str_at, str_range
 from days import day_text, days_of
-from lake import EVENTS, GH_RELEASES, REPO_HOUR, load
+from lake import load
 
 
 def main() raises:

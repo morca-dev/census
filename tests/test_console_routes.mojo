@@ -9,9 +9,9 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from flare.http import Request, Response, Router
 
 from checks import CheckRun
-from console_ai import html_text, llms_txt
+from console_ai import html_text
 from console_cache import Cache, RepoData
-from console_repo import Months, chart_view, month_counts, month_span
+from console_repo import chart_view, month_counts, month_span
 from issues import IssueRow
 from console_layout import SITE_URL
 from console_live import LiveData

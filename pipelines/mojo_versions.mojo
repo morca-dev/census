@@ -37,7 +37,7 @@ from dista import ObjectRef, Seq, Task
 from morca.civil import now
 from morca import Ctx, Gather, Name, Pipeline, Step, Tasks, morca_main
 from morca.keyed import Keyed
-from morca.tables import ensure_table, scan, table
+from morca.tables import ensure_table, scan
 
 from deps import RepoDep, decode_deps
 from headversion import HeadVersion, read_head_version

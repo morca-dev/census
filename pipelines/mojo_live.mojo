@@ -43,7 +43,7 @@ from morca.civil import now
 from morca.tables import BatchBuilder, append, ensure_table, scan, table
 from parquet import RecordBatch
 
-from cols import col, i64_at, str_at
+from cols import col, str_at
 from fetch import github_graphql
 from jscan import days_from_civil
 from lake import (
@@ -59,10 +59,8 @@ from live import (
     Asked,
     ask_heads,
     LiveCommit,
-    heads_query,
     history_query,
     new_since,
-    parse_heads,
     parse_history,
 )
 from replace import replace_files

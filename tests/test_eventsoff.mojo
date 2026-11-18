@@ -24,7 +24,7 @@ from morca.tables import Table
 from parquet import ParquetReader
 from parquet_full import AllCodecs
 
-from datafiles import DataFiles, TableWriter
+from datafiles import TableWriter
 from events import ROWS_PER_BATCH, decode_hour, keep_events
 from gzstream import Whole
 from lake import (

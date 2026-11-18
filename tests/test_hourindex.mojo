@@ -19,7 +19,7 @@ from detect import Candidate, scan_event
 from events import EventParser
 from hourindex import HourIndex, candidates_from, write_marker
 from lake import CANDIDATES_SCHEMA, GH_RELEASES_SCHEMA, REPO_HOUR_SCHEMA
-from jscan import Range, field, scan_event as scan_line, text, timestamp_micros
+from jscan import Range, scan_event as scan_line, text, timestamp_micros
 
 
 def _line(

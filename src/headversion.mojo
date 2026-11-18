@@ -17,7 +17,6 @@ root `pixi.toml`, `mojoproject.toml`, `pyproject.toml`, `requirements*.txt`
 and a `recipe.yaml` of its own), the rows of `mojo.repo_deps`.
 """
 
-from std.os import getenv
 
 from deps import Dep, declared_count, dedupe, encode_deps, is_recipe, manifest_deps
 from command import STDERR_DROP, TIMED_OUT, git, remove_tree
