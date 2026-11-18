@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.14.0 - 2026-11-18
+
+- **morca-mojo 0.37.0:** the UI serves a robots.txt that turns all crawlers away and marks its pages noindex (morca #542). (#215)
+
 ## 1.13.0 - 2026-11-18
 
 - **morca-mojo 0.36.0:** the UI serves on several threads and logs each request (morca #539). (#213)
