@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.13.0 - 2026-11-18
+
+- **morca-mojo 0.36.0:** the UI serves on several threads and logs each request (morca #539). (#213)
+
 ## 1.12.0 - 2026-11-17
 
 - **morca-mojo 0.34.0:** gharchive coverage counts again under the current data version, and Weekly partitions are available; with dista 0.5.2, flare_mlake 0.14.2 and k8s-mojo 0.1.5. (#210)

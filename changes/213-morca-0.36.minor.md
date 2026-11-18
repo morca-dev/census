@@ -1,1 +1,0 @@
-- **morca-mojo 0.36.0:** the UI serves on several threads and logs each request. (#539)
