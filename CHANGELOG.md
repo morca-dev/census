@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.16.0 - 2026-11-19
+
+- **morca-mojo 0.39.0:** the UI can ask visitors for Cloudflare Turnstile before data reads, answers a missing snapshot with a quick 404, and keeps recent data reads in memory (morca #547, #548). (#220)
+
 ## 1.15.0 - 2026-11-19
 
 - **morca-mojo 0.38.0:** the UI limits requests per client, caps data reads running at once, and puts the time in its log (morca #545). (#218)
