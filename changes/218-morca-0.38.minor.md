@@ -1,0 +1,1 @@
+- **morca-mojo 0.38.0:** the UI limits requests per client, caps data reads running at once, and puts the time in its log (morca #545).
