@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.15.0 - 2026-11-19
+
+- **morca-mojo 0.38.0:** the UI limits requests per client, caps data reads running at once, and puts the time in its log (morca #545). (#218)
+
 ## 1.14.0 - 2026-11-18
 
 - **morca-mojo 0.37.0:** the UI serves a robots.txt that turns all crawlers away and marks its pages noindex (morca #542). (#215)
