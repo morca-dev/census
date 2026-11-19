@@ -1,1 +1,0 @@
-- **morca-mojo 0.39.0:** the UI can ask visitors for Cloudflare Turnstile before data reads, answers a missing snapshot with a quick 404, and keeps recent data reads in memory (morca #547, #548).
