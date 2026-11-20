@@ -912,7 +912,7 @@ def read_days(mut src: Sources, until: String = String()) raises:
     src.published = archive_published(
         src.last_day, repo_hour.copy() if repo_hour else events.copy(), try_load("mojo", "activity")
     )
-    read_stored(src, events^, repo_hour^)
+    read_stored(src, events, repo_hour)
 
 
 def count_days(
@@ -1005,7 +1005,7 @@ def read_stored(
         elif name == REPO_HOUR and repo_hour:
             t = repo_hour.copy()
         else:
-            var dot = name.find(".")
+            var dot = name.find(".").or_else(-1)
             t = try_load(String(name[byte=:dot]), String(name[byte = dot + 1 :]))
         if t:
             var st = stored_of(name, t.value())

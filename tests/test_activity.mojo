@@ -20,7 +20,7 @@ from activity import (
 from days import day_text, days_of, month_of
 
 
-def _b(s: StringSlice) -> List[UInt8]:
+def _b(s: StringSpan) -> List[UInt8]:
     return List[UInt8](s.as_bytes())
 
 

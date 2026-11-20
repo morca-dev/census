@@ -32,7 +32,7 @@ def str_at(a: ArrayData, row: Int) -> String:
     if not is_valid(a, row):
         return String()
     var r = str_range(a, row)
-    return String(StringSlice(unsafe_from_utf8=Span(a.values)[r[0] : r[1]]))
+    return String(StringSpan(unsafe_from_utf8=Span(a.values)[r[0] : r[1]]))
 
 
 def i64_at(a: ArrayData, row: Int) -> Int64:

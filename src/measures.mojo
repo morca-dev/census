@@ -170,7 +170,7 @@ def archive_published(
 def vmrss_bytes(status: String) -> Int64:
     """`VmRSS` of a `/proc/<pid>/status` text (`VmRSS:  1234 kB`), in
     bytes; -1 without one."""
-    var k = status.find("VmRSS:")
+    var k = status.find("VmRSS:").or_else(-1)
     if k < 0:
         return -1
     var b = status.as_bytes()

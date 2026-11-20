@@ -113,10 +113,10 @@ def test_live_page_reads_the_table() raises:
     assert_true(d.snapshot >= 0)
     assert_equal(len(d.commits), 2)
     assert_equal(d.commits[0].sha, "b1")  # newest seen first
-    var page = String(StringSlice(unsafe_from_utf8=Span(live_page(d).body)))
+    var page = String(StringSpan(unsafe_from_utf8=Span(live_page(d).body)))
     assert_true("Add &lt;thing&gt;" in page)
     assert_true("o/a" in page and "Fix" in page)
-    var js = String(StringSlice(unsafe_from_utf8=Span(live_json(d).body)))
+    var js = String(StringSpan(unsafe_from_utf8=Span(live_json(d).body)))
     assert_true('"commits":2' in js)
     assert_true('"median_lag_s":100' in js or '"median_lag_s":300' in js)
 

@@ -90,7 +90,7 @@ def _put(mut out: List[UInt8], c: UInt8):
         out.append(c)
 
 
-def _put_str(mut out: List[UInt8], s: StringSlice):
+def _put_str(mut out: List[UInt8], s: StringSpan):
     for c in s.as_bytes():
         out.append(c)
 
@@ -140,7 +140,7 @@ def _inline(s: String, pulls: String) -> String:
                         _put(out, b[j])
                     _put_str(out, "' rel=noopener>")
                     out.extend(
-                        _inline(String(StringSlice(unsafe_from_utf8=b[i + 1 : close])), pulls)
+                        _inline(String(StringSpan(unsafe_from_utf8=b[i + 1 : close])), pulls)
                         .as_bytes()
                     )
                     _put_str(out, "</a>")
@@ -152,7 +152,7 @@ def _inline(s: String, pulls: String) -> String:
             var end = i + 1
             while end < n and _is_digit(b[end]):
                 end += 1
-            var num = StringSlice(unsafe_from_utf8=b[i + 1 : end])
+            var num = StringSpan(unsafe_from_utf8=b[i + 1 : end])
             _put_str(out, "<a href='")
             _put_str(out, pulls)
             _put_str(out, "/")

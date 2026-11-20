@@ -40,7 +40,7 @@ def _json_string(s: String) -> String:
 
 
 def _owner_name(repo: String) -> Tuple[String, String]:
-    var slash = repo.find("/")
+    var slash = repo.find("/").or_else(-1)
     if slash < 0:
         return (repo, String())
     return (String(repo[byte=:slash]), String(repo[byte = slash + 1 :]))

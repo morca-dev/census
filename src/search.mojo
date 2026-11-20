@@ -66,7 +66,7 @@ def search_score(
         return 0
     var full = repo.lower()
     var name = full
-    var slash = full.find("/")
+    var slash = full.find("/").or_else(-1)
     if slash >= 0:
         name = String(full[byte = slash + 1 :])
     if name == q or full == q:
@@ -163,7 +163,7 @@ def bucket_rank(b: String) -> Int:
         return 1_500_000_000
     if b == "unknown":
         return 2_000_000_000
-    var dot = b.find(".")
+    var dot = b.find(".").or_else(-1)
     if dot < 0:
         return 1_000_000_000
     try:

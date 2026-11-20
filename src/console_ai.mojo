@@ -183,7 +183,7 @@ def _entity(name: String) -> String:
 
 def _attr(tag: String, name: String) -> String:
     """The value of attribute `name` in the start tag `tag`, else ""."""
-    var at = tag.find(String(" ", name, "="))
+    var at = tag.find(String(" ", name, "=")).or_else(-1)
     if at < 0:
         return String()
     var i = at + name.byte_length() + 2
@@ -192,7 +192,7 @@ def _attr(tag: String, name: String) -> String:
         return String()
     var q = b[i]
     if q == UInt8(ord("'")) or q == UInt8(ord('"')):
-        var end = tag.find(chr(Int(q)), i + 1)
+        var end = tag.find(chr(Int(q)), i + 1).or_else(-1)
         if end < 0:
             return String()
         return String(tag[byte = i + 1 : end])
@@ -211,8 +211,8 @@ def html_text(html: String) -> String:
     `#`, list items as `- `, table cells split by ` | `, links as
     `[text](url)` and code in backticks; scripts, nav tabs and help buttons
     dropped."""
-    var start = html.find("<main>")
-    var stop = html.find("</main>")
+    var start = html.find("<main>").or_else(-1)
+    var stop = html.find("</main>").or_else(-1)
     var s = String(html[byte = start + 6 : stop]) if start >= 0 and stop > start else html
     var out = String()
     var b = s.as_bytes()
@@ -224,14 +224,14 @@ def html_text(html: String) -> String:
     while i < len(b):
         var ch = b[i]
         if ch == UInt8(ord("<")):
-            var end = s.find(">", i)
+            var end = s.find(">", i).or_else(-1)
             if end < 0:
                 break
             var tag = String(s[byte = i + 1 : end])
             i = end + 1
             var closing = tag.startswith("/")
             var full = String(tag[byte=1:]) if closing else tag
-            var sp = full.find(" ")
+            var sp = full.find(" ").or_else(-1)
             var name = (String(full[byte=:sp]) if sp >= 0 else full).lower()
             if skip > 0:
                 if name == skip_tag:
@@ -297,7 +297,7 @@ def html_text(html: String) -> String:
             i += 1
             continue
         if ch == UInt8(ord("&")):
-            var end = s.find(";", i)
+            var end = s.find(";", i).or_else(-1)
             if end > i and end - i <= 10:
                 var e = _entity(String(s[byte = i + 1 : end]))
                 if e:
@@ -432,7 +432,7 @@ def _overview_text(c: Cache) -> String:
 
 
 def _body(resp: Response) -> String:
-    return String(StringSlice(unsafe_from_utf8=Span(resp.body)))
+    return String(StringSpan(unsafe_from_utf8=Span(resp.body)))
 
 
 def llms_full_txt(c: Cache) raises -> String:

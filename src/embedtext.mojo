@@ -28,7 +28,7 @@ def repo_input(repo: String, description: String, topics: List[String]) -> Strin
     """The text a repository is embedded from: its name with `-` and `_` as
     spaces, its description and its topics, for example
     "mojo sqlite: SQLite bindings for Mojo. Topics: mojo, sqlite"."""
-    var slash = repo.find("/")
+    var slash = repo.find("/").or_else(-1)
     var name = String(repo[byte = slash + 1 :]) if slash >= 0 else repo
     name = name.replace("-", " ").replace("_", " ")
     var out = name^

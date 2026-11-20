@@ -598,10 +598,10 @@ def json_quote(s: String) -> String:
             )
         else:
             continue
-        out += StringSlice(unsafe_from_utf8=Span(b)[start:k])
+        out += StringSpan(unsafe_from_utf8=Span(b)[start:k])
         out += esc
         start = k + 1
-    out += StringSlice(unsafe_from_utf8=Span(b)[start : len(b)])
+    out += StringSpan(unsafe_from_utf8=Span(b)[start : len(b)])
     out += '"'
     return out^
 

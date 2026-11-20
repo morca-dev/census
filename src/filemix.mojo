@@ -38,7 +38,7 @@ def _ends(s: String, ends: List[String]) -> Bool:
 def file_kind(path: String) -> Int:
     """The kind of the file at `path` (a `KIND_*`)."""
     var q = path.lower()
-    var slash = q.rfind("/")
+    var slash = q.rfind("/").or_else(-1)
     var base = String(q[byte = slash + 1 :]) if slash >= 0 else q
     if (
         q.startswith(".github/") or q.startswith(".gitlab") or q.startswith(".circleci/")

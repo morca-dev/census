@@ -47,7 +47,7 @@ def _kinds(dataset: String) raises -> String:
 
 def main() raises:
     var dataset = String(argv()[1])
-    var dot = dataset.find(".")
+    var dot = dataset.find(".").or_else(-1)
     var t = load(String(dataset[byte=:dot]), String(dataset[byte = dot + 1 :]))
     var kinds = _kinds(dataset)
     var names = _names(dataset)

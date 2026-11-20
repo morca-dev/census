@@ -27,7 +27,7 @@ def main() raises:
     var run = String(args[2])
     var partition = String(args[3])
     var do_commit = len(args) > 4 and String(args[4]) == "--commit"
-    var dot = dataset.find(".")
+    var dot = dataset.find(".").or_else(-1)
     var t = load(String(dataset[byte=:dot]), String(dataset[byte = dot + 1 :]))
 
     # The snapshots that run committed for that partition, and the files each

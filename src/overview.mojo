@@ -541,7 +541,7 @@ def bucket_color(bucket: String) -> String:
         return String("var(--border)")
     if bucket == "other":
         return String("var(--c5)")
-    var dot = bucket.find(".")
+    var dot = bucket.find(".").or_else(-1)
     if dot < 0:
         return String("var(--c5)")
     try:

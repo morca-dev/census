@@ -125,8 +125,8 @@ def is_category(key: String) -> Bool:
     return key in category_keys()
 
 
-def _has(s: String, part: StringSlice) -> Bool:
-    return s.find(part) >= 0
+def _has(s: String, part: StringSpan) -> Bool:
+    return part in s
 
 
 def by_rule(input: String) -> String:

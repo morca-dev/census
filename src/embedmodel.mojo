@@ -44,7 +44,7 @@ def mirror_of(warehouse: String) -> String:
     if getenv("MOJO_EMBED_MODEL_URL") or not warehouse.startswith("s3://"):
         return String()
     var rest = String(warehouse[byte = 5 :])
-    var slash = rest.find("/")
+    var slash = rest.find("/").or_else(-1)
     var bucket = rest if slash < 0 else String(rest[byte = : slash])
     return String("s3://", bucket, "/", MIRROR_PATH)
 
@@ -73,7 +73,7 @@ def ensure_model(dir: String) raises -> List[String]:
     var src = url
     for ref f in missing:
         var path = dir + "/" + f
-        var parent = String(path[byte = : path.rfind("/")])
+        var parent = String(path[byte = : path.rfind("/").or_else(-1)])
         makedirs(parent, exist_ok=True)
         var t0 = perf_counter_ns()
         # The whole body arrives before the file is opened, so a failed

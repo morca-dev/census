@@ -1,9 +1,11 @@
 [workspace]
 preview = ["pixi-build"]
 authors = ["Marius S <39998+winding-lines@users.noreply.github.com>"]
-channels = ["https://conda.modular.com/max", "conda-forge"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "census"
-platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+# macOS 13.3: conda-forge's postgresql 18.7 needs it (18.4, the last that
+# didn't, wants an lz4-c older than the one lz4-mojo's shim is built with).
+platforms = [{ name = "osx-arm64-macos13", platform = "osx-arm64", macos = "13.3" }, "linux-aarch64", "linux-64"]
 version = "1.5.1"
 
 [tasks]
@@ -48,34 +50,38 @@ test-upgrade = "sh scripts/test-upgrade.sh"
 test = "sh scripts/test.sh"
 
 [dependencies]
-mojo-compiler = "==1.2.0"
-# llvm-symbolizer (copied into the image) and mblack: flare_mlake and json_mlake
-# brought the full mojo package in until they shipped as .mojoc.
-mojo = "==1.2.0"
-json_mlake = { git = "https://github.com/magmalake/json_mlake.git", rev = "27c05c1c0c2881abfb33ce8eefae4d44d8b602a9" }
-threads-mojo = { git = "https://github.com/magmalake/threads.mojo.git", rev = "f45e780a8de77278c140cee36904e46e93e0ca1c" }
-flare_mlake = { git = "https://github.com/magmalake/flare_mlake.git", rev = "898dd6a76692a55750688a6c53d917c8e797759b" }
-k8s-mojo = { git = "https://github.com/magmalake/k8s.mojo.git", rev = "ab456806084467af45e9a50432c27aaade4f4338" }
-memory-region-mojo = { git = "https://github.com/magmalake/memory-region.mojo.git", rev = "40068c4f95ea659e9b78aa91ced45420b07e3e6e" }
-arrow-mlake-mojo = { git = "https://github.com/magmalake/arrow-mlake.mojo.git", rev = "d2fc48903dc4c6d7c0a251a9efb1337e138c8908" }
-objectstore-mojo = { git = "https://github.com/magmalake/objectstore.mojo.git", rev = "ff66975c095f392695facc1b6dd56823dec914bc" }
-dista-mojo = { git = "https://github.com/morca-dev/dista", rev = "bc35e01ec26a9b29cdcdcb50d7757441ad99f0df" }
-postgres-mojo = { git = "https://github.com/magmalake/postgres.mojo", rev = "324b2bb61e2e80327654abecf70fd4b2defbc50d" }
-brotli-mojo = { git = "https://github.com/magmalake/brotli.mojo.git", rev = "dcbf840d22e3deaf24c587d12d28570a9a882b7f" }
-thrift-mojo = { git = "https://github.com/magmalake/thrift.mojo.git", rev = "21cdbce67d22d72e88e88a60e2f168b05b4ef9fa" }
-lz4-mojo = { git = "https://github.com/magmalake/lz4.mojo.git", rev = "23cd6e54967d7e41573371507228ca5c958ca685" }
-zstd-mojo = { git = "https://github.com/magmalake/zstd.mojo.git", rev = "76190bb31012cd2d2f6712c4e1724a66474215db" }
-snappy-mojo = { git = "https://github.com/magmalake/snappy.mojo.git", rev = "b8172ed0a4ef13911cc225d46e26676a5b8f1ccd" }
-parquet-full-mojo = { git = "https://github.com/magmalake/parquet.mojo.git", rev = "8ea972080ad64bcbed569cf382a767da7b6be0bb", subdirectory = "full" }
-deflate-mojo = { git = "https://github.com/magmalake/deflate.mojo.git", rev = "c3dfb87f5b09fb2559449dcb8b748629da4908af" }
-sqlite-mojo = { git = "https://github.com/magmalake/sqlite.mojo.git", rev = "0d76aa7b672c85580f4d8c5de855772bc972d535" }
-avro-mojo = { git = "https://github.com/magmalake/avro.mojo.git", rev = "d5b26ccefa8c49cc3af517731f5df104762119e0" }
-roaring-mojo = { git = "https://github.com/magmalake/roaring.mojo.git", rev = "a90a7bd30cf1c21403a29059282072e93fbeeee2" }
-hashes-mojo = { git = "https://github.com/magmalake/hashes.mojo.git", rev = "395aca597f9410bd0511df44d972f14b10a8b01d" }
-iceberg-mojo = { git = "https://github.com/magmalake/iceberg.mojo.git", rev = "813682073914eb65bb653eef1681325221cf410c" }
-morca-mojo = { git = "https://github.com/morca-dev/morca.git", rev = "ddd56eebd2239925f8ffe65f525c5735be499853" }
+# One toolchain: the census, its tests and its image use the Mojo nightly
+# morca-mojo and every magmalake tin below are built with. A precompiled Mojo
+# package (.mojoc) loads only in the compiler version that built it, so the
+# pin is exact and moves with theirs; each tin is at a revision built with it,
+# the same one wherever it is pinned in the graph. The full `mojo` package
+# beside the compiler, for llvm-symbolizer (copied into the image) and mblack.
+mojo-compiler = "==1.3.0.dev2026111805"
+mojo = "==1.3.0.dev2026111805"
+json_mlake = { git = "https://github.com/magmalake/json_mlake.git", rev = "7ea15048ac905386a89d03717e56cef8832b571b" }
+threads-mojo = { git = "https://github.com/magmalake/threads.mojo.git", rev = "c9da1a84f4f2d624043df97b90bb44f8e8b5256b" }
+flare_mlake = { git = "https://github.com/magmalake/flare_mlake.git", rev = "a46a8b9068f51bc78b84ee754e65dd2bdbf58743" }
+k8s-mojo = { git = "https://github.com/magmalake/k8s.mojo.git", rev = "e272aa600d595568643560e61f4fa8654f26947a" }
+memory-region-mojo = { git = "https://github.com/magmalake/memory-region.mojo.git", rev = "d8256141cedc5e35e1a69f9a5eb2faae6116fe3a" }
+arrow-mlake-mojo = { git = "https://github.com/magmalake/arrow-mlake.mojo.git", rev = "a40c7560837b478b2331bf860fc53da87a332089" }
+objectstore-mojo = { git = "https://github.com/magmalake/objectstore.mojo.git", rev = "ea8d007fba7fc9777ebd5c3a5b7c8beed83a25db" }
+dista-mojo = { git = "https://github.com/morca-dev/dista", rev = "8734f81b43c610769584c508595b109d7d356af1" }
+postgres-mojo = { git = "https://github.com/magmalake/postgres.mojo", rev = "188f2f1008737908af9809c5bc328ed0b39923fc" }
+brotli-mojo = { git = "https://github.com/magmalake/brotli.mojo.git", rev = "f4805b14130fad51c7cc681d53e207717a9427cf" }
+thrift-mojo = { git = "https://github.com/magmalake/thrift.mojo.git", rev = "f09f0877999cb16da7a219943c3ac6f75ef2deaa" }
+lz4-mojo = { git = "https://github.com/magmalake/lz4.mojo.git", rev = "a978f1ba2248dc7841072bd746e49eff1f09878d" }
+zstd-mojo = { git = "https://github.com/magmalake/zstd.mojo.git", rev = "5b9da775b7fa9ff1e795a3794a6c38a2be605834" }
+snappy-mojo = { git = "https://github.com/magmalake/snappy.mojo.git", rev = "459ee401bade016bdda9667948572486315c4de0" }
+parquet-full-mojo = { git = "https://github.com/magmalake/parquet.mojo.git", rev = "29c2c687f4a8f729b8a6fb400559c032e14a42c2", subdirectory = "full" }
+deflate-mojo = { git = "https://github.com/magmalake/deflate.mojo.git", rev = "732a98e2299e67840ffdaf58bf0e4377dc7c30fc" }
+sqlite-mojo = { git = "https://github.com/magmalake/sqlite.mojo.git", rev = "de664a8c996672d4e3c75070ecebd4321ee323fa" }
+avro-mojo = { git = "https://github.com/magmalake/avro.mojo.git", rev = "85381ca755abc6368ced208a0b123fcfe454d867" }
+roaring-mojo = { git = "https://github.com/magmalake/roaring.mojo.git", rev = "4a97ddcaa9d8e27c5446bcf0a63e23254fd02c8c" }
+hashes-mojo = { git = "https://github.com/magmalake/hashes.mojo.git", rev = "705664cbeb3804bc94a750b9e8a054e739425bdb" }
+iceberg-mojo = { git = "https://github.com/magmalake/iceberg.mojo.git", rev = "1d4bf77b92c830016b7b46d76d787a5e967767dc" }
+morca-mojo = { git = "https://github.com/morca-dev/morca.git", rev = "7334d8c0e2efc4211e0573555b0f16ae0408b1ad" }
 # mojo_embed's sentence embeddings; brings max-core (its matmul kernels).
-encoder-mojo = { git = "https://github.com/magmalake/encoder.mojo.git", rev = "34d8651903c4a4f94d9025de15a88cd3693e2df7" }
+encoder-mojo = { git = "https://github.com/magmalake/encoder.mojo.git", rev = "da4fdd8b339197cfeaa5b59b670b6b2fc3938f93" }
 postgresql = ">=18.4,<19"
 git = ">=2.56.0,<3"
 
@@ -83,20 +89,24 @@ git = ">=2.56.0,<3"
 # with a per-function object cache. `pixi run -e ouromo dev-build
 # pipelines/mojo_issues.mojo` rebuilds one program in a bit more than half
 # the time; the binaries are a few percent slower and larger, so nothing
-# that ships is built here. No linux-aarch64 package exists.
-[feature.ouromo]
-channels = ["https://prefix.dev/winding-lines/ouromo"]
-platforms = ["osx-arm64", "linux-64"]
-
-[feature.ouromo.dependencies]
-ouromo = "==1.2.0.1"
-
-# conda-forge's current postgresql needs macOS 13.3; pixi assumes 13.0.
-[feature.ouromo.system-requirements]
-macos = "13.3"
-
-[feature.ouromo.tasks]
-dev-build = "sh scripts/dev-build.sh"
-
-[environments]
-ouromo = ["ouromo"]
+# that ships is built here. No linux-aarch64 package exists. The only ouromo
+# published (1.2.0.1) depends on mojo-compiler ==1.2.0, which can't be
+# installed beside the Mojo above, so the feature and its environment are off
+# until an ouromo built on that Mojo exists; then uncomment both, with its
+# version (scripts/dev-build.sh is unchanged).
+# [feature.ouromo]
+# channels = ["https://prefix.dev/winding-lines/ouromo"]
+# platforms = ["osx-arm64", "linux-64"]
+#
+# [feature.ouromo.dependencies]
+# ouromo = "==1.2.0.1"
+#
+# # conda-forge's current postgresql needs macOS 13.3; pixi assumes 13.0.
+# [feature.ouromo.system-requirements]
+# macos = "13.3"
+#
+# [feature.ouromo.tasks]
+# dev-build = "sh scripts/dev-build.sh"
+#
+# [environments]
+# ouromo = ["ouromo"]

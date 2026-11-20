@@ -10,6 +10,10 @@
 # 42 s where `mojo build` takes 75 s. The binary runs a few percent slower
 # and is larger, so CI, the image and the releases build with `mojo`
 # (scripts/build.sh), not with this.
+#
+# Off for now: the only ouromo published is built on Mojo 1.2.0, which can't
+# be installed beside the census's Mojo, so pixi.toml has the ouromo
+# environment commented out until one built on that Mojo exists.
 set -eu
 src=$1
 shift

@@ -60,7 +60,7 @@ name_of() {
     echo
     echo 'def main() raises:'
     echo '    var me = String(argv()[0])'
-    echo '    var slash = me.rfind("/")'
+    echo '    var slash = me.rfind("/").or_else(-1)'
     echo '    var name = String(me[byte = slash + 1 :]) if slash >= 0 else me'
     names=""
     kw=if

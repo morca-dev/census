@@ -128,7 +128,7 @@ def _get(r: Router, url: String) raises -> Response:
 
 
 def _body(resp: Response) -> String:
-    return String(StringSlice(unsafe_from_utf8=Span(resp.body)))
+    return String(StringSpan(unsafe_from_utf8=Span(resp.body)))
 
 
 def _links(text: String) -> List[String]:
@@ -137,7 +137,7 @@ def _links(text: String) -> List[String]:
     var out = List[String]()
     var at = 0
     while True:
-        var k = text.find(SITE_URL, at)
+        var k = text.find(SITE_URL, at).or_else(-1)
         if k < 0:
             break
         var end = k + SITE_URL.byte_length()
@@ -152,7 +152,7 @@ def _links(text: String) -> List[String]:
 
 def _template(path: String) -> String:
     """`/repos/:owner/:name` as flare's OpenAPI template, `?q=` dropped."""
-    var q = path.find("?")
+    var q = path.find("?").or_else(-1)
     var p = String(path[byte=:q]) if q >= 0 else path
     return p.replace(":owner", "{owner}").replace(":name", "{name}")
 
@@ -238,10 +238,10 @@ def test_sitemap() raises:
     # Every <loc> answers 200.
     var at = 0
     while True:
-        var k = s.find("<loc>", at)
+        var k = s.find("<loc>", at).or_else(-1)
         if k < 0:
             break
-        var end = s.find("</loc>", k)
+        var end = s.find("</loc>", k).or_else(-1)
         var path = String(s[byte = k + 5 + SITE_URL.byte_length() : end])
         assert_equal(_get(r, path if path else String("/")).status, 200, path)
         at = end

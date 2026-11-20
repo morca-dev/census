@@ -48,14 +48,14 @@ struct AuthorMonth(Copyable, Movable):
     """Commits they authored or co-authored that month."""
 
 
-def normalize_email(email: StringSlice) -> String:
+def normalize_email(email: StringSpan) -> String:
     """`email` trimmed and lowercased, and a GitHub noreply address
     (`123+login@users.noreply.github.com`) without its numeric id, so the
     old and new forms of the same address are one person."""
     var e = String(email.strip()).lower()
     comptime NOREPLY = "@users.noreply.github.com"
     if e.endswith(NOREPLY):
-        var plus = e.find("+")
+        var plus = e.find("+").or_else(-1)
         if plus > 0:
             var digits = True
             for c in e.as_bytes()[:plus]:
@@ -67,7 +67,7 @@ def normalize_email(email: StringSlice) -> String:
     return e^
 
 
-def author_id(name: StringSlice, email: StringSlice) -> String:
+def author_id(name: StringSpan, email: StringSpan) -> String:
     """The first `ID_HEX` hex digits of the sha256 of the normalized email
     (of the lowercased name when there is no email): stable across runs
     and repositories, and not the email itself."""
@@ -79,7 +79,7 @@ def author_id(name: StringSlice, email: StringSlice) -> String:
     return String(h[byte=:ID_HEX])
 
 
-def is_bot(name: StringSlice, email: StringSlice) -> Bool:
+def is_bot(name: StringSpan, email: StringSpan) -> Bool:
     """Whether a commit's author or co-author is a bot: a name ending in
     `[bot]` (`dependabot[bot]`, `github-actions[bot]`), an email of one
     (`...[bot]@users.noreply.github.com`), or the names dependabot and
@@ -91,12 +91,12 @@ def is_bot(name: StringSlice, email: StringSlice) -> Bool:
     return n.startswith("dependabot") or n.startswith("github-actions")
 
 
-def parse_coauthor(value: StringSlice) -> Tuple[String, String]:
+def parse_coauthor(value: StringSpan) -> Tuple[String, String]:
     """A `Co-authored-by:` value, `Name <email>`, as (name, email); a value
     without `<...>` is all name."""
     var v = String(value.strip())
-    var lt = v.find("<")
-    var gt = v.rfind(">")
+    var lt = v.find("<").or_else(-1)
+    var gt = v.rfind(">").or_else(-1)
     if lt < 0 or gt < lt:
         return (v^, String())
     return (String(v[byte=:lt].strip()), String(v[byte = lt + 1 : gt].strip()))

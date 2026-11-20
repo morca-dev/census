@@ -86,7 +86,6 @@ def _line_chart(
     """One line per name over `months`, from `counts` (`name|month`), as
     inline SVG with a legend; the versions and the stars charts draw it.
     `colors` gives each name's colour (by default the palette in order)."""
-    var last = months[len(months) - 1]
     var left = 36
     var right = 12
     var up = 10
