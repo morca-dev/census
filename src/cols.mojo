@@ -51,6 +51,14 @@ def i32_at(a: ArrayData, row: Int) -> Int64:
     return Int64(p[unsafe_offset=row])
 
 
+def f64_at(a: ArrayData, row: Int) -> Float64:
+    """Row `row` of a double column, or 0 for a null."""
+    if not is_valid(a, row):
+        return 0
+    var p = a.values.unsafe_ptr().unsafe_bitcast[Float64]()
+    return p[unsafe_offset=row]
+
+
 def bool_at(a: ArrayData, row: Int) -> Bool:
     """Row `row` of a boolean column (bit-packed), or False for a null."""
     if not is_valid(a, row):

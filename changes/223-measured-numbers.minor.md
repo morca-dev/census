@@ -1,0 +1,1 @@
+- **By the numbers:** How it works shows mojo_embed's embedding rate and model load time (new table `mojo.measures`), how soon a GH Archive day and a push reach the site, and the console's memory and image size, each linked to its run (#124).

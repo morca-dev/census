@@ -34,6 +34,7 @@ comptime REPO_EMBEDDINGS = "mojo.repo_embeddings"
 comptime ISSUES = "mojo.issues"
 comptime LIVE_COMMITS = "mojo.live_commits"
 comptime LIVE_HEADS = "mojo.live_heads"
+comptime MEASURES = "mojo.measures"
 
 comptime EVENTS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -510,6 +511,26 @@ comptime LIVE_HEADS_SCHEMA = (
 )
 """Each census repo's default-branch head at the poller's last look,
 rewritten whole by a poll that saw one move."""
+
+
+comptime MEASURES_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"pipeline","required":true,"type":"string"},'
+    '{"id":2,"name":"run","required":true,"type":"long"},'
+    '{"id":3,"name":"name","required":true,"type":"string"},'
+    '{"id":4,"name":"value","required":true,"type":"double"},'
+    '{"id":5,"name":"unit","required":true,"type":"string"},'
+    '{"id":6,"name":"at","required":true,"type":"timestamptz"}]}'
+)
+"""One row per measurement a pipeline run took of itself (#124), appended
+by the step that measured it: `run` is morca's run number (0 for a run
+outside morca), `name` what was measured (`embed_texts_per_s`,
+`embed_model_load_s`), `value` in `unit`, `at` when. The How it works page
+shows the newest of each (`measures.latest_measures`)."""
+
+
+def measures_schema() raises -> Schema:
+    return Schema.parse(MEASURES_SCHEMA)
 
 
 def live_commits_schema() raises -> Schema:

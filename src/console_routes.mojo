@@ -12,7 +12,7 @@ from querymodel import QueryModel
 from console_ai import llms_full_response, llms_response, robots, sitemap_response
 from console_api import index_json, overview_json, repo_json, search_json, versions_json
 from console_cache import Cache
-from console_how import changelog, how, optimizations
+from console_how import HowSite, changelog, optimizations
 from console_layout import EDGE_CACHE, _empty, _page
 from console_list import repos_page, search
 from console_live import LiveSite
@@ -156,7 +156,7 @@ def console_router(cache: Int, checks: Int, model: Int, live: Int) raises -> Rou
     r.get("/versions", _moved_to_migrations)
     r.get("/live", LiveSite(live, False))
     r.get("/api/live", LiveSite(live, True))
-    r.get("/how", how)
+    r.get("/how", HowSite(cache, live))
     r.get("/how/optimizations", optimizations)
     r.get("/how/changelog", changelog)
     r.get("/search", Site(2, cache, checks, model))

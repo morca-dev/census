@@ -17,6 +17,7 @@ from console_layout import SITE_URL
 from console_live import LiveData
 from console_pages import api_pages, site_pages
 from console_routes import console_router
+from measures import Measure
 from model import Library, Point
 from querymodel import QueryModel
 from search import url_encode
@@ -169,6 +170,22 @@ def test_llms_links_answer_200() raises:
         assert_equal(got.status, 200, path)
     assert_true("/repos/acme/tomlkit" in links)
     assert_true("/api/repos/acme/tomlkit" in links)
+
+
+def test_how_has_the_numbers() raises:
+    # From the Cache's measures: one mojo_embed run's rate (#124).
+    var c = _cache()
+    c.measures["mojo_embed/embed_texts_per_s"] = Measure(
+        "mojo_embed", 31, "embed_texts_per_s", 640.0, "texts/s", 1
+    )
+    var body = _body(_get(_router_of(c^), "/how"))
+    assert_true("By the numbers" in body)
+    assert_true("640 texts/s" in body)
+    assert_true("/runs/31" in body)
+    # Served before the first build too, without the cache's numbers.
+    var cold = _get(_router_of(Cache()), "/how")
+    assert_equal(cold.status, 200)
+    assert_true("not measured yet" in _body(cold))
 
 
 def test_every_route_listed() raises:
