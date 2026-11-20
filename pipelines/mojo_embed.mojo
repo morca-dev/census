@@ -1,6 +1,7 @@
 """Embeds every Mojo repository's name, description and topics into
 mojo.repo_embeddings, for similar repositories, semantic search and
-categories on the console.
+categories on the console, and records how fast it embedded (texts a
+second, and the model's load time) in mojo.measures.
 
 Daily partitions from 2026-11-10, each filled at 07:00 UTC, after
 mojo_stats has refreshed the descriptions (06:00). A run reads every
@@ -34,7 +35,7 @@ from std.time import perf_counter_ns
 from encoder import Encoder
 from morca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, morca_main
 from morca.civil import now
-from morca.tables import ensure_table, scan, table
+from morca.tables import FileChanges, commit, ensure_table, scan, table, write_files
 
 from cols import col, has_col, i32_at, str_at, strs_at
 from embedtext import (
@@ -45,7 +46,8 @@ from embedtext import (
     repo_input,
     vector_bytes,
 )
-from lake import REPOS, REPO_EMBEDDINGS, REPO_STATS, repo_embeddings_schema
+from lake import MEASURES, REPOS, REPO_EMBEDDINGS, REPO_STATS, measures_schema, repo_embeddings_schema
+from measures import EMBED_LOAD, EMBED_RATE, Measure, measures_batch
 from replace import replace_files
 from embedmodel import DEFAULT_MODEL, ensure_model, model_rev
 
@@ -168,6 +170,7 @@ def embed(mut ctx: Ctx, d: Day) raises -> Int:
         return 0
 
     var embedded_at = now() * 1_000_000
+    var measured = List[Measure]()
     if len(todo) > 0:
         var t0 = perf_counter_ns()
         var enc = Encoder(dir)
@@ -181,15 +184,29 @@ def embed(mut ctx: Ctx, d: Day) raises -> Int:
                 todo[i], model, rev, hashes[i], inputs[i], dim,
                 vector_bytes(v, i * dim, dim), embedded_at,
             ))
+        var rate = Float64(len(todo)) / max(s, 1e-9)
         ctx.log(String(
             len(todo), " repositories embedded with ", model, " ", rev,
-            " (dim ", dim, ") in ", s, " s, ", Float64(len(todo)) / max(s, 1e-9),
+            " (dim ", dim, ") in ", s, " s, ", rate,
             " a second; model loaded in ", load_s, " s",
         ))
+        measured.append(Measure(ctx.pipeline, ctx.run, EMBED_RATE, rate, "texts/s", embedded_at))
+        measured.append(Measure(ctx.pipeline, ctx.run, EMBED_LOAD, load_s, "s", embedded_at))
     # One `overwrite` snapshot removing `files` and adding `out`; a retry
     # finds the commit its first attempt made. Safe because one run writes
     # the table at a time (max_runs 1).
     var id = replace_files(ctx, t, files, [embed_batch(out)])
+    # The run's two numbers, after the rows they measured are in: a retry
+    # that finds them committed re-embeds nothing, so it measures nothing.
+    # A plain `append` commit of new files: each row is one run's, so a
+    # rerun (a new run) adds its own beside the earlier runs' rather than
+    # replacing them. (`morca.tables.append` would replace the whole table,
+    # declared in replaces= below; `commit` recognises a retry's.)
+    if len(measured) > 0:
+        var mt = ensure_table(ctx, MEASURES, measures_schema())
+        var files = FileChanges()
+        files.added_data = write_files(mt, [measures_batch(measured)])
+        _ = commit(ctx, mt, "append", files^)
     ctx.log(String(
         String(d), ": ", len(repos), " repositories, ", len(todo), " embedded, ",
         len(out) - len(todo), " kept, ", dropped, " dropped; ", REPO_EMBEDDINGS,
@@ -212,7 +229,9 @@ comptime Embed = Step[
     # adding them again, so `morca backfill --rerun` needs no --allow-append.
     # Under replaces=, a morca.tables `append` to them would replace whole
     # partitions, other keys' rows included: keep writing through replace_files.
-    replaces=[REPO_EMBEDDINGS],
+    # mojo.measures is here for the same rerun check: a rerun adds its own
+    # run's rows (a `commit`, above), which aren't the earlier runs' again.
+    replaces=[REPO_EMBEDDINGS, MEASURES],
 ]
 # Daily at 07:00 UTC, an hour after mojo_stats. A day's run embeds what
 # changed since the last, so a missed day needs no catch-up.
