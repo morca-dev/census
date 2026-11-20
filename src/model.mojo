@@ -14,6 +14,7 @@ from historyrows import repo_dep_rows
 from days import day_text
 from jscan import micros_to_iso
 from names import Names, NameRow, name_columns, name_rows, names_from
+from measures import Published, archive_published
 from lake import (
     ACTIVITY,
     ACTIVITY_REPOS,
@@ -859,6 +860,8 @@ struct Sources(Copyable, Movable):
     var stored: List[Stored]
     """What each table of the lake holds (`read_stored`), in `lake_tables`'
     order; a table that doesn't exist or has no snapshot is left out."""
+    var published: Published
+    """When `last_day` reached the site (`measures.archive_published`)."""
 
     def __init__(out self):
         self.ids = List[Int64]()
@@ -869,6 +872,7 @@ struct Sources(Copyable, Movable):
         self.stored = List[Stored]()
         self.first_day = String()
         self.last_day = String()
+        self.published = Published.none()
 
     def same_as(self, other: Sources) -> Bool:
         if len(self.ids) != len(other.ids):
@@ -885,7 +889,7 @@ def read_sources() raises -> Sources:
     var out = Sources()
     var names: List[String] = [
         "repos", "commits", "repo_stats", "activity", "migrations", "releases", "tags",
-        "repo_embeddings", "issues", "contributors", "dep_forks",
+        "repo_embeddings", "issues", "contributors", "dep_forks", "measures",
     ]
     for name in names:
         var t = try_load("mojo", name)
@@ -899,11 +903,15 @@ def read_sources() raises -> Sources:
 
 def read_days(mut src: Sources, until: String = String()) raises:
     """Count the GH Archive days loaded into `src`: the days the snapshots
-    of gharchive.events and gharchive.repo_hour name (`count_days`); and
+    of gharchive.events and gharchive.repo_hour name (`count_days`), and
+    when the newest of them reached the site (`archive_published`); and
     read what every table holds (`read_stored`), those two loaded once."""
     var events = try_load("gharchive", "events")
     var repo_hour = try_load("gharchive", "repo_hour")
     count_days(src, events, repo_hour, until)
+    src.published = archive_published(
+        src.last_day, repo_hour.copy() if repo_hour else events.copy(), try_load("mojo", "activity")
+    )
     read_stored(src, events^, repo_hour^)
 
 

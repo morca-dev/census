@@ -1,14 +1,28 @@
-"""The console's How it works pages: `/how`, the pipelines, machines and
-tables with a Mermaid diagram, `/how/optimizations`, how the pipelines got
+"""The console's How it works pages: `/how`, the census's numbers (By the
+numbers, #124) and the pipelines, machines and tables with a Mermaid diagram, `/how/optimizations`, how the pipelines got
 faster, and `/how/changelog`, CHANGELOG.md."""
 
 from std.os import getenv
 
-from flare.http import Request, Response, html_escape
+from flare.http import Handler, Request, Response, html_escape
+from morca.civil import now
 from changelog import changelog_html
 from howimage import HETZNER_SERVER_WEBP, LINEAGE_DARK_WEBP, LINEAGE_LIGHT_WEBP
+from live import Freshness, freshness
+from measures import (
+    EMBED_LOAD,
+    EMBED_RATE,
+    Measure,
+    Published,
+    console_rss_bytes,
+    image_bytes,
+    measure_key,
+)
+from swap import Swap
 
+from console_cache import Cache
 from console_layout import _nav, _page
+from console_live import LiveData
 from console_pages import page_line
 
 
@@ -262,12 +276,173 @@ def _stage(name: String, before: String, after: String) -> String:
     )
 
 
-def how(req: Request) raises -> Response:
+@fieldwise_init
+struct Numbers(Copyable, Movable):
+    """What By the numbers shows, each with where it came from."""
+
+    var rate: Optional[Measure]
+    """mojo_embed's latest texts a second (`EMBED_RATE`)."""
+    var load: Optional[Measure]
+    """mojo_embed's latest model load time (`EMBED_LOAD`)."""
+    var published: Published
+    """The newest GH Archive day's hour to published."""
+    var push: Freshness
+    """The Live page's commit to seen over the last 24 h."""
+    var rss: Int64
+    """The console's resident memory now, -1 where unknown."""
+    var image: Int64
+    """The image's size (`MORCA_IMAGE_BYTES`), -1 when not reported."""
+
+
+def numbers_of(c: Cache, live: LiveData, t_now: Int64) -> Numbers:
+    """The numbers from the current `Cache` (mojo.measures and the
+    snapshots it read at its last look), the Live page's data, and this
+    process. `t_now` is seconds since the epoch."""
+    var push = Freshness(0, 0, 0)
+    if live.snapshot >= 0:
+        push = freshness(live.commits, (t_now - 86_400) * 1_000_000)
+    return Numbers(
+        c.measures.get(measure_key("mojo_embed", EMBED_RATE)),
+        c.measures.get(measure_key("mojo_embed", EMBED_LOAD)),
+        c.sources.published.copy(),
+        push^,
+        console_rss_bytes(),
+        image_bytes(),
+    )
+
+
+def _fixed(v: Float64, digits: Int) -> String:
+    """`v` rounded to `digits` decimals (0 to 3)."""
+    var scale = 1
+    for _ in range(digits):
+        scale *= 10
+    var n = Int(v * Float64(scale) + 0.5) if v >= 0 else -Int(-v * Float64(scale) + 0.5)
+    if digits == 0:
+        return String(n)
+    var sign = String("-") if n < 0 else String()
+    var a = n if n >= 0 else -n
+    var frac = String(a % scale)
+    while frac.byte_length() < digits:
+        frac = String("0", frac)
+    return String(sign, a // scale, ".", frac)
+
+
+def _bytes(n: Int64) -> String:
+    """`n` bytes as MB under a GB, else GB to one decimal (1000-based, as
+    `docker image ls` shows them)."""
+    if n < 1_000_000_000:
+        return String(Int(n // 1_000_000), " MB")
+    return String(_fixed(Float64(n) / 1e9, 1), " GB")
+
+
+def _duration(secs: Int64) -> String:
+    var s = secs if secs >= 0 else -secs
+    var sign = String("&minus;") if secs < 0 else String()
+    if s < 60:
+        return String(sign, s, " s")
+    if s < 3600:
+        return String(sign, s // 60, " min")
+    if s < 86_400:
+        return String(sign, s // 3600, " h ", (s % 3600) // 60, " min")
+    return String(sign, s // 86_400, " d ", (s % 86_400) // 3600, " h")
+
+
+def _from_run(pipeline: String, run: Int) -> String:
+    """A link to the run a number came from, or to its pipeline when the
+    number is derived or names no run."""
+    if run > 0:
+        return _link(String(MORCA_UI, "/runs/", run), String(pipeline, " run ", run))
+    return _link(String(MORCA_UI, "/pipelines/", pipeline), pipeline)
+
+
+def _number(value: String, label: String, source: String) -> String:
+    return String(
+        "<div class=kpi><span>", value, "</span><small>", label, "</small><small>", source,
+        "</small></div>",
+    )
+
+
+comptime NOT_YET = "<span class=mute>&ndash;</span>"
+
+
+def by_the_numbers(n: Numbers) -> String:
+    """The By the numbers block: each number and where it came from."""
+    var h = String(
+        "<h2 id=numbers>By the numbers</h2><p class=sub>Measured by the pipelines and",
+        " this server, not written by hand; each links the run or pipeline it comes from.</p>",
+        "<div class=kpis>",
+    )
+    if n.rate:
+        ref m = n.rate.value()
+        h.write(_number(
+            String(_fixed(m.value, 0), " texts/s"),
+            "embedding repo descriptions on the CPU (mojo_embed)",
+            _from_run(m.pipeline, m.run),
+        ))
+    else:
+        h.write(_number(NOT_YET, "embedding rate: not measured yet", _from_run("mojo_embed", 0)))
+    if n.load:
+        ref m = n.load.value()
+        h.write(_number(
+            String(_fixed(m.value, 2), " s"), "loading the embedding model", _from_run(m.pipeline, m.run)
+        ))
+    else:
+        h.write(_number(NOT_YET, "model load: not measured yet", _from_run("mojo_embed", 0)))
+    if n.published.day.byte_length() > 0:
+        h.write(_number(
+            _duration(n.published.lag_s),
+            String("GH Archive hour to published, for ", n.published.day),
+            _from_run(n.published.pipeline if n.published.pipeline else String("gharchive"), n.published.run),
+        ))
+    else:
+        h.write(_number(NOT_YET, "GH Archive hour to published", _from_run("gharchive", 0)))
+    if n.push.n > 0:
+        h.write(_number(
+            _duration(Int64(n.push.median_s)),
+            String("push to published, median of ", n.push.n, " commits in 24 h (<a href='/live'>Live</a>)"),
+            _from_run("mojo_live", 0),
+        ))
+    else:
+        h.write(_number(NOT_YET, "push to published (<a href='/live'>Live</a>)", _from_run("mojo_live", 0)))
+    h.write(_number(
+        _bytes(n.rss) if n.rss >= 0 else String(NOT_YET),
+        String("this site's memory now") if n.rss >= 0 else String("this site's memory: not on Linux"),
+        "the console's VmRSS",
+    ))
+    h.write(_number(
+        _bytes(n.image) if n.image >= 0 else String("not reported"),
+        "the image it runs",
+        "set at deploy",
+    ))
+    h.write("</div>")
+    return h^
+
+
+@fieldwise_init
+struct HowSite(Copyable, Handler):
+    """`/how`, with By the numbers from the `Swap[Cache]` at `cache` and
+    the `Swap[LiveData]` at `live`, which live as long as the process. The
+    page is served before the first build too, its numbers not there yet."""
+
+    var cache: Int
+    var live: Int
+
+    def serve(self, req: Request) raises -> Response:
+        ref sw = Pointer[Swap[Cache], MutUntrackedOrigin](unsafe_from_address=self.cache)[]
+        ref lv = Pointer[Swap[LiveData], MutUntrackedOrigin](unsafe_from_address=self.live)[]
+        var held = sw.get()
+        var live = lv.get()
+        return how(req, by_the_numbers(numbers_of(held[], live[], now())))
+
+
+def how(req: Request, numbers: String = String()) raises -> Response:
+    """The page, with `numbers` (`by_the_numbers`) after the lead."""
     return _page(
         "How it works",
         String(
             _how_head("overview"),
             HOW_LEAD,
+            numbers,
             "<figure class=diagram aria-label='The pipelines and the tables between them'>",
             "<pre class=mermaid>",
             html_escape(DIAGRAM),

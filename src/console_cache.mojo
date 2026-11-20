@@ -41,6 +41,7 @@ from overview import (
 )
 
 from console_migrations_body import _migrations_body
+from measures import Measure, latest_measures
 from issues import RepoIssues, add_issue_months, read_issue_rows, summarize
 from similar import Embeddings, Neighbor, nearest, read_embeddings
 from categories import categorize
@@ -162,6 +163,9 @@ struct Cache(Movable):
     var moved: Dict[String, String]
     """A renamed or transferred repo's old names, lowercased, to its
     current name, for the redirects from its old pages (#181)."""
+    var measures: Dict[String, Measure]
+    """The newest row of mojo.measures of each pipeline and name
+    (`measures.latest_of`), for How it works' numbers."""
 
     def __init__(out self):
         self.ready = False
@@ -205,6 +209,7 @@ struct Cache(Movable):
         self.emb = Embeddings()
         self.categories = List[String]()
         self.moved = Dict[String, String]()
+        self.measures = Dict[String, Measure]()
 
     def _build(mut self, today: Int, var src: Sources) raises:
         var b = Builder(today)
@@ -392,6 +397,7 @@ struct Cache(Movable):
         self.embed_snapshot = emb.snapshot
         self.emb = emb^
         self.moved = moved^
+        self.measures = latest_measures()
         self.repo_rows = b.repo_rows
         self.sources = src^
         self.built_day = today
