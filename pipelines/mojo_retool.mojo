@@ -196,7 +196,6 @@ def retool(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     for ref t in old_tags:
         if t.repo not in tagged:
             out_tags.append(t.copy())
-    var kept = (len(out_commits), len(out_migrations), len(out_tags))
     for ref c in new_commits:
         out_commits.append(c.copy())
     for ref m in new_migrations:

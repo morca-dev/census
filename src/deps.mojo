@@ -100,7 +100,7 @@ def github_repo(url: String) -> String:
     """`owner/name` of a GitHub URL (`https://github.com/o/r.git`,
     `git+https://github.com/o/r@v1`, `git@github.com:o/r.git`,
     `https://github.com/o/r/archive/v1.tar.gz`), or empty."""
-    var at = url.find("github.com")
+    var at = url.find("github.com").or_else(-1)
     if at < 0:
         return String()
     var i = at + 10
@@ -199,7 +199,7 @@ def _inline_str(value: String, key: String) -> String:
     empty."""
     var at = 0
     while True:
-        var i = value.find(key, at)
+        var i = value.find(key, at).or_else(-1)
         if i < 0:
             return String()
         at = i + 1
@@ -285,7 +285,7 @@ def _pep508(req: String, section: String, file: String) -> Optional[Dep]:
         return None
     var kind = String("pypi")
     var repo = String()
-    var at = r.find("@")
+    var at = r.find("@").or_else(-1)
     if at > 0:
         var url = String(String(r[byte = at + 1 :]).strip())
         repo = github_repo(url)
@@ -412,7 +412,7 @@ def _indent(line: String) -> Int:
 
 def _yaml_value(line: String) -> String:
     """The value of a `key: value` YAML line, unquoted; empty for none."""
-    var colon = line.find(":")
+    var colon = line.find(":").or_else(-1)
     if colon < 0:
         return String()
     return _unquote(String(line[byte = colon + 1 :]))
@@ -428,7 +428,7 @@ def _subst(value: String, context: Dict[String, String]) -> String:
     if inner.endswith("}}"):
         var cut = String(String(inner[byte = : inner.byte_length() - 2]).strip())
         inner = cut^
-    var bar = inner.find("|")
+    var bar = inner.find("|").or_else(-1)
     var lower = False
     if bar >= 0:
         lower = "lower" in String(inner[byte = bar + 1 :])
@@ -476,7 +476,7 @@ def recipe_deps(text: String, file: String) -> List[Dep]:
             req_key = String()
             continue
         if in_context >= 0 and ":" in line:
-            var k = String(line[byte = : line.find(":")])
+            var k = String(line[byte = : line.find(":").or_else(-1)])
             context[String(k.strip())] = _yaml_value(line)
             continue
         if in_package >= 0 and line.startswith("name:"):
@@ -519,13 +519,13 @@ def requirements_deps(text: String, file: String) -> List[Dep]:
             continue
         if line.startswith("-e ") or line.startswith("git+") or line.startswith("https://"):
             var url = String(String(line[byte = 3 :]).strip()) if line.startswith("-e ") else line
-            var egg = url.find("#egg=")
+            var egg = url.find("#egg=").or_else(-1)
             var name = _leading_name(String(url[byte = egg + 5 :])) if egg >= 0 else String()
             var repo = github_repo(url)
             if name.byte_length() == 0:
                 if repo.byte_length() == 0:
                     continue
-                name = String(repo[byte = repo.find("/") + 1 :])
+                name = String(repo[byte = repo.find("/").or_else(-1) + 1 :])
             out.append(Dep(String(DEPENDS), String("git") if "git+" in url else String("url"), name^, repo^, String("requirements"), file))
             continue
         if line.startswith("-"):
@@ -669,7 +669,7 @@ struct ForkOf(Copyable, Movable):
 
 def _short(repo: String) -> String:
     """The name part of `owner/name`."""
-    var slash = repo.find("/")
+    var slash = repo.find("/").or_else(-1)
     return String(repo[byte = slash + 1 :]) if slash >= 0 else repo
 
 
@@ -875,7 +875,7 @@ def second_degree(repo: String, used_by: Dict[String, List[String]]) raises -> L
 def owner_of(repo: String) -> String:
     """The owner part of `owner/name`, lowercased: GitHub owners are the
     same whatever their case."""
-    var slash = repo.find("/")
+    var slash = repo.find("/").or_else(-1)
     return String(repo[byte=:slash]).lower() if slash >= 0 else repo.lower()
 
 
@@ -946,7 +946,7 @@ def _depended_rows(
             rows.append(r^)
             continue
         if o not in at:
-            var slash = repos[i].find("/")
+            var slash = repos[i].find("/").or_else(-1)
             at[o] = len(rows)
             rows.append(Depended(String(repos[i][byte=:slash], "/*"), o, True))
             users[o] = Dict[String, Bool]()

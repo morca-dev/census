@@ -15,7 +15,7 @@ are the same release and compare equal.
 # console, `mojo_history` and `mojo_versions` all sort and compare with.
 
 
-def _num(s: StringSlice) -> Int:
+def _num(s: StringSpan) -> Int:
     """The leading digits of `s` as a number, or -1 if there are none."""
     var v = 0
     var any = False
@@ -116,7 +116,7 @@ def _version_at(b: Span[UInt8, _], var i: Int) -> String:
             i += 3
         else:
             break
-    var out = String(StringSlice(unsafe_from_utf8=b[s:i]))
+    var out = String(StringSpan(unsafe_from_utf8=b[s:i]))
     # A sentence's full stop after the number ("Mojo 24.4.") isn't part of it.
     while out.endswith("."):
         var cut = String(out[byte = : out.byte_length() - 1])
@@ -291,12 +291,12 @@ def packaging(rattler: Bool, conda_build: Bool) -> String:
     return "none"
 
 
-def recipe_kind(path: StringSlice) -> String:
+def recipe_kind(path: StringSpan) -> String:
     """`rattler` for a `recipe.yaml`, `conda-build` for a `meta.yaml`, at the
     root or in `recipe/`, `recipes/`, `conda/` or `conda.recipe/`; else
     empty. Deeper recipes belong to examples or vendored code."""
     var base = path
-    var slash = path.find("/")
+    var slash = path.find("/").or_else(-1)
     if slash >= 0:
         var dir = path[byte=:slash]
         base = path[byte = slash + 1 :]
@@ -359,7 +359,7 @@ def pylock_version(text: String) -> String:
         if not in_package:
             continue
         if l.startswith("name") or l.startswith("version"):
-            var eq = l.find("=")
+            var eq = l.find("=").or_else(-1)
             if eq < 0:
                 continue
             var key = String(l[byte=:eq].strip())
@@ -636,7 +636,7 @@ def _action_version(text: String) -> String:
                 break
             if n.startswith("version:") or n.startswith("mojo-version:"):
                 var b = n.as_bytes()
-                var colon = n.find(":")
+                var colon = n.find(":").or_else(-1)
                 var v = _scan_version(b, _skip_spaces(b, colon + 1))
                 if v.byte_length() > 0:
                     return v^

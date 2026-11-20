@@ -32,7 +32,7 @@ def main() raises:
     var t0 = perf_counter_ns()
     var f = open(String(args[1]), "r")
     var gz = f.read_bytes()
-    f.close()
+    f^.close()
     var t1 = perf_counter_ns()
     var data = gunzip(Span(gz))
     var t2 = perf_counter_ns()

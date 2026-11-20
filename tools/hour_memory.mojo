@@ -57,7 +57,7 @@ def main() raises:
     var t0 = perf_counter_ns()
     var f = open(path, "r")
     var gz = f.read_bytes(stat(path).st_size)
-    f.close()
+    f^.close()
     var rows = 0
     if mode == "gunzip":
         var r = GzipReader(CHUNK * 2)

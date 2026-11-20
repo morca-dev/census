@@ -123,8 +123,8 @@ def _checks_page(run: CheckRun) raises -> Response:
 def _with_notice(var resp: Response, note: String) -> Response:
     """`resp` with `note` atop its footer, when it is one of `_page`'s."""
     comptime FOOTER = "<footer><div class=wrap>"
-    var html = String(StringSlice(unsafe_from_utf8=Span(resp.body)))
-    var k = html.find(FOOTER)
+    var html = String(StringSpan(unsafe_from_utf8=Span(resp.body)))
+    var k = html.find(FOOTER).or_else(-1)
     if k < 0:
         return resp^
     k += FOOTER.byte_length()

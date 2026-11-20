@@ -904,7 +904,7 @@ def read_days(mut src: Sources, until: String = String()) raises:
     var events = try_load("gharchive", "events")
     var repo_hour = try_load("gharchive", "repo_hour")
     count_days(src, events, repo_hour, until)
-    read_stored(src, events^, repo_hour^)
+    read_stored(src, events, repo_hour)
 
 
 def count_days(
@@ -997,7 +997,7 @@ def read_stored(
         elif name == REPO_HOUR and repo_hour:
             t = repo_hour.copy()
         else:
-            var dot = name.find(".")
+            var dot = name.find(".").or_else(-1)
             t = try_load(String(name[byte=:dot]), String(name[byte = dot + 1 :]))
         if t:
             var st = stored_of(name, t.value())

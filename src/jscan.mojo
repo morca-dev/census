@@ -89,7 +89,7 @@ def skip_value(b: Span[UInt8, _], var i: Int, end: Int) -> Int:
     return end
 
 
-def _key_is(b: Span[UInt8, _], ks: Int, ke: Int, key: StringSlice) -> Bool:
+def _key_is(b: Span[UInt8, _], ks: Int, ke: Int, key: StringSpan) -> Bool:
     """Whether the string at `[ks, ke)` (quotes included) is exactly `key`."""
     var kb = key.as_bytes()
     var n = len(kb)
@@ -101,7 +101,7 @@ def _key_is(b: Span[UInt8, _], ks: Int, ke: Int, key: StringSlice) -> Bool:
     return True
 
 
-def field(b: Span[UInt8, _], obj: Range, key: StringSlice) -> Range:
+def field(b: Span[UInt8, _], obj: Range, key: StringSpan) -> Range:
     """The value of `key` in the object at `obj`, or a range not found."""
     var end = obj.end
     var i = skip_ws(b, obj.start, end)
@@ -292,7 +292,7 @@ def scan_event(b: Span[UInt8, _], line: Range) -> EventFields:
     return out
 
 
-def path(b: Span[UInt8, _], obj: Range, a: StringSlice, c: StringSlice) -> Range:
+def path(b: Span[UInt8, _], obj: Range, a: StringSpan, c: StringSpan) -> Range:
     """`obj[a][c]`."""
     var r = field(b, obj, a)
     if not r.found():
@@ -335,7 +335,7 @@ def text(b: Span[UInt8, _], r: Range) -> String:
     if b[r.start] != _QUOTE:
         if r.end - r.start == 4 and b[r.start] == UInt8(ord("n")):
             return String()
-        return String(StringSlice(unsafe_from_utf8=b[r.start : r.end]))
+        return String(StringSpan(unsafe_from_utf8=b[r.start : r.end]))
     var s = r.start + 1
     var e = r.end - 1
     var plain = True
@@ -344,7 +344,7 @@ def text(b: Span[UInt8, _], r: Range) -> String:
             plain = False
             break
     if plain:
-        return String(StringSlice(unsafe_from_utf8=b[s:e]))
+        return String(StringSpan(unsafe_from_utf8=b[s:e]))
     var out = List[UInt8](capacity=e - s)
     var i = s
     while i < e:
@@ -387,7 +387,7 @@ def raw(b: Span[UInt8, _], r: Range) -> String:
     """A value's bytes as written."""
     if not r.found():
         return String()
-    return String(StringSlice(unsafe_from_utf8=b[r.start : r.end]))
+    return String(StringSpan(unsafe_from_utf8=b[r.start : r.end]))
 
 
 def each(b: Span[UInt8, _], arr: Range) -> List[Range]:

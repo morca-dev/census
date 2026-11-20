@@ -96,11 +96,11 @@ def _list_query(req: Request) -> ListQuery:
 
 def _raw_query(req: Request) -> String:
     """The part of the URL after `?`, before any `#`; empty for none."""
-    var q = req.url.find("?")
+    var q = req.url.find("?").or_else(-1)
     if q < 0:
         return String()
     var s = String(req.url[byte = q + 1 :])
-    var hash = s.find("#")
+    var hash = s.find("#").or_else(-1)
     if hash >= 0:
         var cut = String(s[byte=:hash])
         s = cut^

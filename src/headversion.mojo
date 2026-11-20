@@ -81,7 +81,7 @@ struct HeadVersion(Copyable, Movable):
 
 def _base(path: String) -> String:
     """The last component of `path`."""
-    var slash = path.rfind("/")
+    var slash = path.rfind("/").or_else(-1)
     if slash < 0:
         return path
     return String(path[byte = slash + 1 :])
@@ -248,7 +248,7 @@ def read_head_version(repo: String) raises -> HeadVersion:
     Errors (a repository gone, a failed clone) come back in `error`, so one
     bad repository doesn't fail the rest of its run."""
     var out = HeadVersion.empty(repo)
-    var dir: String = ""
+    var dir: String
     try:
         if not safe_repo(repo):
             out.error = String("not a repository name: ", repo)

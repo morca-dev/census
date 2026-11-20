@@ -178,8 +178,8 @@ def _content_range(v: String) -> Tuple[Int, Int]:
     try:
         if not v.startswith("bytes "):
             return (-1, -1)
-        var dash = v.find("-")
-        var slash = v.find("/")
+        var dash = v.find("-").or_else(-1)
+        var slash = v.find("/").or_else(-1)
         if dash < 0 or slash < dash:
             return (-1, -1)
         return (
@@ -616,7 +616,7 @@ def github_graphql(body: String) raises -> Reply:
     budget of its own, not the REST API's."""
     var c = _client()
     var bytes = List[UInt8](body.as_bytes())
-    var req = Request(method="POST", url="https://api.github.com/graphql", body=bytes^)
+    var req = Request(method="POST", url="https://api.github.com/graphql", body=bytes)
     req.headers.set("User-Agent", USER_AGENT)
     req.headers.set("Content-Type", "application/json")
     var token = getenv("GITHUB_TOKEN")

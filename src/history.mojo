@@ -40,7 +40,7 @@ comptime SUBJECT_MAX = 200
 """Bytes of a commit subject kept (cut on a codepoint boundary)."""
 
 
-def cut_subject(s: StringSlice) -> String:
+def cut_subject(s: StringSpan) -> String:
     """`s` to at most `SUBJECT_MAX` bytes, on a codepoint boundary."""
     if s.byte_length() <= SUBJECT_MAX:
         return String(s)
@@ -162,7 +162,7 @@ def parse_tags(repo: String, output: String) -> List[TagRow]:
             continue
         var annotated = String(f[1]) == "tag"
         var target = String(f[3]) if annotated and f[3].byte_length() > 0 else String(f[2])
-        var at = Int64(0)
+        var at: Int64
         try:
             at = Int64(Int(String(f[4]).strip())) * 1_000_000
         except:
@@ -225,7 +225,7 @@ def safe_repo(repo: String) -> Bool:
     return slashes == 1 and not repo.startswith(".") and ".." not in repo
 
 
-def is_bazel_file(path: StringSlice) -> Bool:
+def is_bazel_file(path: StringSpan) -> Bool:
     """The files that make a repository a Bazel one, at its root."""
     return (
         path == "MODULE.bazel"
@@ -235,7 +235,7 @@ def is_bazel_file(path: StringSlice) -> Bool:
     )
 
 
-def is_python_manifest(path: StringSlice) -> Bool:
+def is_python_manifest(path: StringSpan) -> Bool:
     """A root `pyproject.toml` or `requirements*.txt`: where a Python build
     tool is told to install Mojo."""
     if "/" in path:
@@ -245,7 +245,7 @@ def is_python_manifest(path: StringSlice) -> Bool:
     )
 
 
-def is_tool_file(path: StringSlice) -> Bool:
+def is_tool_file(path: StringSpan) -> Bool:
     """Whether a change to `path` can change a commit's tooling or Mojo
     version, so the version is read again (Bazel's files only change the
     tooling, recipes only the packaging: neither needs a read)."""
@@ -256,7 +256,7 @@ def is_tool_file(path: StringSlice) -> Bool:
     )
 
 
-def is_mojo_file(path: StringSlice) -> Bool:
+def is_mojo_file(path: StringSpan) -> Bool:
     """Whether `path` is Mojo source, in either extension."""
     return path.endswith(".mojo") or path.endswith(".🔥")
 
@@ -554,7 +554,7 @@ def _finish(repo: String, dir: String, mut st: _State, mut out: History) raises:
     st.py_touched = False
 
 
-def _path_of(line: StringSlice) -> String:
+def _path_of(line: StringSpan) -> String:
     """The path in a `--summary` line: ` create mode 100644 <path>`."""
     var s = String(line)
     var at = 0

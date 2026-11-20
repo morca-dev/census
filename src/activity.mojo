@@ -117,7 +117,7 @@ def parse_release(
 def add_event(
     mut acc: Acc,
     mut releases: List[ReleaseRow],
-    type: StringSlice,
+    type: StringSpan,
     actor: String,
     payload: Span[UInt8, _],
 ):

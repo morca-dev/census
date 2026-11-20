@@ -1,7 +1,9 @@
 """Reads repositories' HEAD the way the mojo_versions pipeline does and prints
 one tab-separated line each: repo, version, source, file, estimate, last Mojo
 commit (UTC date), declared dependencies, error; then, indented, the rows of
-`mojo.repo_deps` it would write. For trying the readers on real repositories:
+`mojo.repo_deps` it would write.
+
+For trying the readers on real repositories:
 
     pixi run mojo run -I src tools/head_versions.mojo owner/name ...
 

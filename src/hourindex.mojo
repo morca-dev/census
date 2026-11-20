@@ -68,7 +68,7 @@ struct ReleaseEvent(Copyable, Movable):
     var prerelease: Bool
 
 
-def _action_is(p: Span[UInt8, _], want: StringSlice) -> Bool:
+def _action_is(p: Span[UInt8, _], want: StringSpan) -> Bool:
     """Whether the payload's `action` is `want`."""
     return text(p, field(p, Range(0, len(p)), "action")) == want
 

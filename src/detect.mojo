@@ -82,7 +82,7 @@ def _lower(c: UInt8) -> UInt8:
     return c
 
 
-def contains_ci(b: Span[UInt8, _], s: Int, e: Int, needle: StringSlice) -> Bool:
+def contains_ci(b: Span[UInt8, _], s: Int, e: Int, needle: StringSpan) -> Bool:
     """Whether `b[s:e]` contains `needle` (lowercase ASCII), ignoring case."""
     # Events are scanned as raw bytes, with no JSON parse or allocation, since
     # this runs on every event of the day; the fields are

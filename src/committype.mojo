@@ -263,7 +263,7 @@ def commit_type(subject: String, version_change: Bool) -> String:
     var s = subject.lower()
     # Leading tags, `[skip ci] Merge pull request ...`, `[pre-commit.ci] ...`.
     while s.startswith("["):
-        var close = s.find("]")
+        var close = s.find("]").or_else(-1)
         if close < 0:
             break
         var tag = String(s[byte=1:close])
