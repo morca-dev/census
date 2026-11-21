@@ -1,1 +1,0 @@
-- **morca-mojo 0.40.0:** every container gets `MORCA_IMAGE_BYTES`, shown on /how; deploy tools 0.38.0 (morca #551). (#224)

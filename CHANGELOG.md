@@ -3,6 +3,14 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.17.0 - 2026-11-21
+
+- **Mojo 1.3 nightly:** the census now requires Mojo 1.3.0.dev2026111805, with morca-mojo, dista-mojo and every tin at revisions built with it (#222).
+
+- **By the numbers:** How it works shows mojo_embed's embedding rate and model load time (new table `mojo.measures`), how soon a GH Archive day and a push reach the site, and the console's memory and image size, each linked to its run (#124).
+
+- **morca-mojo 0.40.0:** every container gets `MORCA_IMAGE_BYTES`, shown on /how; deploy tools 0.38.0 (morca #551). (#224)
+
 ## 1.16.0 - 2026-11-19
 
 - **morca-mojo 0.39.0:** the UI can ask visitors for Cloudflare Turnstile before data reads, answers a missing snapshot with a quick 404, and keeps recent data reads in memory (morca #547, #548). (#220)
