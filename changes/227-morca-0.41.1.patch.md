@@ -1,0 +1,1 @@
+- **morca-mojo 0.41.1:** a pipeline's page in the morca UI keeps the links to its code after a run starts (morca #584); dista-mojo at its published 0.6.0. (#227)
