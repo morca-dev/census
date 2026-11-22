@@ -12,7 +12,8 @@ which the console downloads on its first start; CONSOLE_SEMANTIC=0 turns it off)
 `/how`, `/how/optimizations` and `/how/changelog` how the census is built,
 `/repos/<owner>/<name>` one repo. The data pages have JSON at `/api/...`;
 `/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and `/robots.txt` are for
-crawlers and language models (`console_ai`). The routes are in `console_routes`.
+crawlers and language models (`console_ai`), and `POST /mcp` is an MCP server
+over the same data for agents (`console_mcp`). The routes are in `console_routes`.
 
 The repos and the overview are computed and kept (`Cache`), and a background
 thread keeps them fresh: every `CONSOLE_REFRESH_SECONDS` (default 1800) it
@@ -47,6 +48,8 @@ from querymodel import QueryModel, load_model, semantic_on
 from console_cache import RETRY_SECS, Cache, refresh_secs
 from console_live import LiveData, live_refresher
 from console_routes import console_router
+from console_mcp import McpState, new_mcp_state
+from mcp_events import posthog_flusher
 
 
 def _check(c: Cache, t: Int64) raises -> CheckRun:
@@ -188,7 +191,13 @@ def main() raises:
     var live = Int(pl)
     var live_thread = ThreadHandle.spawn[live_refresher](OpaquePtr(unsafe_from_address=live))
     live_thread.detach()
-    var r = console_router(cache, checks, model, live)
+    # /mcp's shared state; with a PostHog key, a thread sends its events.
+    var mcp = new_mcp_state(getenv("POSTHOG_KEY"))
+    ref st = Pointer[McpState, MutUntrackedOrigin](unsafe_from_address=mcp)[]
+    if st.events.on():
+        var flusher = ThreadHandle.spawn[posthog_flusher](OpaquePtr(unsafe_from_address=Int(Pointer(to=st.events))))
+        flusher.detach()
+    var r = console_router(cache, checks, model, live, mcp)
     var addr = String("0.0.0.0:", getenv("PORT", "8080"))
     var server = HttpServer.bind(SocketAddr.parse(addr), ServerConfig())
     print("console on http://", addr, sep="")
