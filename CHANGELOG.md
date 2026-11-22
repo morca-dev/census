@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.18.0 - 2026-11-22
+
+- **morca-mojo 0.42.0:** a pipeline's page in the morca UI keeps the links to its code after a run starts (morca #584); self-hosted pools and `morca host` (morca #587); opt-in working-set probing (`learn = "working_set"`, morca #588) and swap offload (`MORCA_RUN_SWAP_PCT`, morca #589), both off unless set. dista-mojo at its published 0.6.0. (#227)
+
 ## 1.17.0 - 2026-11-21
 
 - **Mojo 1.3 nightly:** the census now requires Mojo 1.3.0.dev2026111805, with morca-mojo, dista-mojo and every tin at revisions built with it (#222).
