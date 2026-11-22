@@ -49,7 +49,7 @@ from console_cache import RETRY_SECS, Cache, refresh_secs
 from console_live import LiveData, live_refresher
 from console_routes import console_router
 from console_mcp import McpState, new_mcp_state
-from mcp_events import EventQueue, posthog_flusher
+from mcp_events import posthog_flusher
 
 
 def _check(c: Cache, t: Int64) raises -> CheckRun:

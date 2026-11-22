@@ -19,11 +19,10 @@ are dropped. With no `POSTHOG_KEY` (or one that isn't a project key) the
 queue is off and nothing is kept or sent.
 """
 
-from std.memory import ArcPointer
 from std.time import perf_counter_ns, sleep
 
 from hashes import xxh64
-from jscan import Range, each, field, skip_value, skip_ws, text
+from jscan import Range, each, skip_value, skip_ws, text
 from threads import Mutex, OpaquePtr
 
 from analytics import is_project_key
