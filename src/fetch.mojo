@@ -645,3 +645,13 @@ def raw_file(repo: String, branch: String, file: String) raises -> String:
     if resp.status != 200:
         return String()
     return resp.text()
+
+
+def post_json(url: String, body: String, timeout_ms: Int = 10_000) raises -> Int:
+    """POST the JSON `body` to `url`; the status. Connect and each read are
+    bounded by `timeout_ms` (the console's PostHog events, `mcp_events`)."""
+    var c = _client(timeout_ms, timeout_ms)
+    var req = Request(method="POST", url=url, body=List[UInt8](body.as_bytes()))
+    req.headers.set("User-Agent", USER_AGENT)
+    req.headers.set("Content-Type", "application/json")
+    return c.send(req).status

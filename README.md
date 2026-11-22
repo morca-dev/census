@@ -214,6 +214,10 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   current stars, forks and topics from the latest `mojo.repo_stats` row,
   stars per month from `mojo.activity`, releases and tags), each also as
   JSON under `/api/` (`/api/overview`, `/api/repos`, `/api/repos?q=`, ...),
+  an MCP server for agents at `POST /mcp` (`src/console_mcp.mojo`: Streamable
+  HTTP, stateless, read-only; tools `search_repos`, `list_repos`, `get_repo`,
+  `similar_repos`, `version_adoption` and `overview`; at most
+  `MCP_CALLS_PER_MINUTE` tool calls a minute per client, default 60),
   and `/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and `/robots.txt` for
   crawlers and language models, all written from `src/console_pages.mojo`'s
   list of pages (`tests/test_console_routes.mojo` checks it against the
@@ -561,7 +565,10 @@ the page's own origin, with memory-only persistence (no cookies, no
 `localStorage`, so no consent banner), and `site: "mojourney"` registered on
 every event (morca's UI sends `site: "morca"`), so one PostHog project can hold
 both sites. If the key is unset or not a `phc_` key, the snippet is left out
-(`src/analytics.mojo`). The console doesn't serve `/ph`: on mojourney.dev
+(`src/analytics.mojo`). With the same key, the console also sends PostHog an
+`mcp_request` event for each `/mcp` request from the server, batched every
+10 s by a thread of its own, with a daily-salted hash of the client's IP as
+its id and no IP or person profile (`src/mcp_events.mojo`). The console doesn't serve `/ph`: on mojourney.dev
 the `mojourney-ph` Cloudflare Worker in magmalake/magmalake.org does
 (`npx wrangler deploy -c worker/mojourney-ph/wrangler.jsonc`).
 

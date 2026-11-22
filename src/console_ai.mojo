@@ -86,6 +86,12 @@ def llms_txt(c: Cache) -> String:
     for p in api_pages():
         out += _entry(p, repo)
     out.write(
+        "\n## MCP\n\n",
+        "- [MCP server](",
+        SITE_URL,
+        "/mcp): The same data for agents, as a remote MCP server (Streamable HTTP, POST only,",
+        " read-only, no auth). Tools: search_repos, list_repos, get_repo, similar_repos,",
+        " version_adoption and overview.\n",
         "\n## Optional\n\n",
         "- [Full text](",
         SITE_URL,

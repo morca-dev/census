@@ -16,6 +16,7 @@ from console_how import HowSite, changelog, optimizations
 from console_layout import EDGE_CACHE, _empty, _page
 from console_list import repos_page, search
 from console_live import LiveSite
+from console_mcp import McpSite, new_mcp_state
 from console_migrations import migrations_page
 from console_overview import overview
 from console_repo import repo_page
@@ -143,12 +144,13 @@ def _moved_to_migrations(req: Request) raises -> Response:
     return redirect("/migrations", 301)
 
 
-def console_router(cache: Int, checks: Int, model: Int, live: Int) raises -> Router:
+def console_router(cache: Int, checks: Int, model: Int, live: Int, mcp: Int = 0) raises -> Router:
     """Every route of the console. `cache`, `checks`, `model` and `live` are
     the addresses of the `Swap[Cache]`, `Swap[CheckRun]`, `Swap[QueryModel]`
-    and `Swap[LiveData]`, which outlive the router. `console_pages` lists the
-    same pages for /llms.txt and the sitemap; test_console_routes checks the
-    two agree."""
+    and `Swap[LiveData]`, which outlive the router; `mcp` is the
+    `console_mcp.McpState`'s (0 for a new one that sends no events).
+    `console_pages` lists the same pages for /llms.txt and the sitemap;
+    test_console_routes checks the two agree."""
     var r = Router()
     r.get("/", Site(0, cache, checks, model))
     r.get("/repos", Site(1, cache, checks, model))
@@ -171,4 +173,6 @@ def console_router(cache: Int, checks: Int, model: Int, live: Int) raises -> Rou
     r.get("/llms-full.txt", Site(12, cache, checks, model))
     r.get("/sitemap.xml", Site(13, cache, checks, model))
     r.get("/robots.txt", robots)
+    # MCP's Streamable HTTP: POST only, so a GET gets the router's 405.
+    r.post("/mcp", McpSite(cache, model, mcp if mcp != 0 else new_mcp_state(String())))
     return r^

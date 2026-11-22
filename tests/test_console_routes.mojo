@@ -34,6 +34,7 @@ def _unlisted() -> List[String]:
         "/llms-full.txt",
         "/sitemap.xml",
         "/robots.txt",
+        "/mcp",  # the MCP server, POST only; /llms.txt names it apart (test_mcp)
     ]
 
 
@@ -167,7 +168,9 @@ def test_llms_links_answer_200() raises:
     assert_true(len(links) >= 15, String(len(links)))
     for path in links:
         var got = _get(r, path)
-        assert_equal(got.status, 200, path)
+        # /mcp is POST only (test_mcp).
+        assert_equal(got.status, 405 if path == "/mcp" else 200, path)
+    assert_true("/mcp" in links)
     assert_true("/repos/acme/tomlkit" in links)
     assert_true("/api/repos/acme/tomlkit" in links)
 
