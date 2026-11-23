@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.20.0 - 2026-11-23
+
+- **morca-mojo 0.44.0:** the morca UI answers 403 to a crawler that names itself in its `User-Agent` (Meta's read past `/robots.txt`), on every page but `/robots.txt` and `/healthz`; link previews of its pages are refused too (morca #595). (#233)
+
 ## 1.19.0 - 2026-11-23
 
 - **MCP server:** `POST /mcp` serves the census to agents as six read-only MCP tools, and with `POSTHOG_KEY` set each request is a PostHog event. (#230)
