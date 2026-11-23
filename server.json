@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.mojourney/census",
+  "title": "Mojourney",
+  "description": "The Mojo ecosystem census: search public Mojo repos, their Mojo versions and growth.",
+  "websiteUrl": "https://mojourney.dev/ai",
+  "repository": {
+    "url": "https://github.com/morca-dev/census",
+    "source": "github"
+  },
+  "version": "1.20.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mojourney.dev/mcp"
+    }
+  ]
+}

@@ -9,6 +9,7 @@ from search import url_decode
 from swap import Swap
 from querymodel import QueryModel
 
+from console_ai_page import ai_page, registry_auth
 from console_ai import llms_full_response, llms_response, robots, sitemap_response
 from console_api import index_json, overview_json, repo_json, search_json, versions_json
 from console_cache import Cache
@@ -173,6 +174,8 @@ def console_router(cache: Int, checks: Int, model: Int, live: Int, mcp: Int = 0)
     r.get("/llms-full.txt", Site(12, cache, checks, model))
     r.get("/sitemap.xml", Site(13, cache, checks, model))
     r.get("/robots.txt", robots)
+    r.get("/ai", ai_page)
+    r.get("/.well-known/mcp-registry-auth", registry_auth)
     # MCP's Streamable HTTP: POST only, so a GET gets the router's 405.
     r.post("/mcp", McpSite(cache, model, mcp if mcp != 0 else new_mcp_state(String())))
     return r^

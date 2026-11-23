@@ -1,0 +1,1 @@
+- **Use with AI:** a `/ai` page on adding the MCP server to Claude, Cursor or VS Code, linked from the footer and `/llms.txt`, and a `server.json` for the MCP Registry.

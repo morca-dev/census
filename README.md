@@ -556,6 +556,24 @@ puts them in front of the origin's file, so the console's `/robots.txt`
 needs no Cloudflare change. Check with `curl -s https://mojourney.dev/robots.txt | tail -3`.
 If the managed setting were off, the console's file is served alone.
 
+### Publishing the MCP server
+
+`/ai` tells people how to add `/mcp` to their agent. The server is also listed
+in the [MCP Registry](https://registry.modelcontextprotocol.io) as
+`dev.mojourney/census`, from `server.json`. The registry checks that we own
+mojourney.dev by fetching `/.well-known/mcp-registry-auth`, which the console
+serves (`REGISTRY_AUTH` in `src/console_ai_page.mojo`). The matching Ed25519
+private key is not in the repo; it is at `~/.config/mojourney/mcp-registry-key.pem`
+on the Mac. After a release is deployed, set `version` in `server.json` to it
+and publish (OpenSSL 3, `brew install mcp-publisher`):
+
+```sh
+KEY=~/.config/mojourney/mcp-registry-key.pem
+MCP_PRIVATE_KEY="$(/opt/homebrew/opt/openssl@3/bin/openssl pkey -in $KEY -noout -text | sed -n '/priv:/,/pub:/p' | sed '1d;$d' | tr -d ' :\n')" \
+  mcp-publisher login http --domain mojourney.dev
+mcp-publisher publish
+```
+
 ### Analytics
 
 With `POSTHOG_KEY` set to a PostHog project key (`phc_...`, a public

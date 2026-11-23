@@ -34,13 +34,12 @@ def _unlisted() -> List[String]:
         "/llms-full.txt",
         "/sitemap.xml",
         "/robots.txt",
+        "/.well-known/mcp-registry-auth",  # the MCP Registry's proof of the domain
         "/mcp",  # the MCP server, POST only; /llms.txt names it apart (test_mcp)
     ]
 
 
-def _lib(
-    repo: String, description: String, topics: List[String], aliases: List[String] = List[String]()
-) -> Library:
+def _lib(repo: String, description: String, topics: List[String], aliases: List[String] = List[String]()) -> Library:
     return Library(
         repo,
         description,
@@ -178,9 +177,7 @@ def test_llms_links_answer_200() raises:
 def test_how_has_the_numbers() raises:
     # From the Cache's measures: one mojo_embed run's rate (#124).
     var c = _cache()
-    c.measures["mojo_embed/embed_texts_per_s"] = Measure(
-        "mojo_embed", 31, "embed_texts_per_s", 640.0, "texts/s", 1
-    )
+    c.measures["mojo_embed/embed_texts_per_s"] = Measure("mojo_embed", 31, "embed_texts_per_s", 640.0, "texts/s", 1)
     var body = _body(_get(_router_of(c^), "/how"))
     assert_true("By the numbers" in body)
     assert_true("640 texts/s" in body)
@@ -329,13 +326,32 @@ comptime JAN_1 = 20454
 
 
 def _pt(days: Int, lines: Int64) -> Point:
-    return Point(Int64(days) * DAY_US, lines, String("0123456789abcdef0123456789abcdef01234567"), String(), String(), String(), String())
+    return Point(
+        Int64(days) * DAY_US,
+        lines,
+        String("0123456789abcdef0123456789abcdef01234567"),
+        String(),
+        String(),
+        String(),
+        String(),
+    )
 
 
 def _issue(number: Int64, kind: String, opened: Int, closed: Int, merged: Int = 0) -> IssueRow:
     return IssueRow(
-        "acme/tomlkit", number, kind, "closed" if closed > 0 else "open", "t", List[String](), "a", 0,
-        Int64(opened) * DAY_US, Int64(opened) * DAY_US, Int64(closed) * DAY_US, Int64(merged) * DAY_US, 0,
+        "acme/tomlkit",
+        number,
+        kind,
+        "closed" if closed > 0 else "open",
+        "t",
+        List[String](),
+        "a",
+        0,
+        Int64(opened) * DAY_US,
+        Int64(opened) * DAY_US,
+        Int64(closed) * DAY_US,
+        Int64(merged) * DAY_US,
+        0,
     )
 
 
@@ -410,6 +426,26 @@ def test_repo_json_over_time() raises:
     )
     var other = _body(_get(r, "/api/repos/acme/http"))
     assert_true('"over_time":{"lines_of_mojo":2000,"commits":{"total":4,"months":[]},"issues":null}' in other)
+
+
+def test_ai_page() raises:
+    var r = _router()
+    var resp = _get(r, "/ai")
+    assert_equal(resp.status, 200)
+    var html = _body(resp)
+    assert_true("claude mcp add --transport http mojourney https://mojourney.dev/mcp" in html)
+    assert_true("dev.mojourney/census" in html)
+    for t in ["search_repos", "list_repos", "get_repo", "similar_repos", "version_adoption", "overview"]:
+        assert_true(String("<code>", t, "</code>") in html, t)
+    assert_true("<a href='/ai'>Use with AI</a>" in _body(_get(r, "/")))
+    assert_true("https://mojourney.dev/ai" in _body(_get(r, "/llms.txt")))
+
+
+def test_registry_auth() raises:
+    var resp = _get(_router(), "/.well-known/mcp-registry-auth")
+    assert_equal(resp.status, 200)
+    assert_true(_body(resp).startswith("v=MCPv1; k=ed25519; p="))
+    assert_equal(resp.headers.get("Content-Type"), "text/plain; charset=utf-8")
 
 
 def main() raises:
