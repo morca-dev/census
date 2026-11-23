@@ -1,0 +1,1 @@
+- **morca-mojo 0.44.0:** the morca UI answers 403 to a crawler that names itself in its `User-Agent` (Meta's read past `/robots.txt`), on every page but `/robots.txt` and `/healthz`; link previews of its pages are refused too (morca #595). (#233)
