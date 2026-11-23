@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.21.0 - 2026-11-23
+
+- **Use with AI:** a `/ai` page on adding the MCP server to Claude, Cursor or VS Code, linked from the footer and `/llms.txt`, and a `server.json` for the MCP Registry. (#235)
+
 ## 1.20.0 - 2026-11-23
 
 - **morca-mojo 0.44.0:** the morca UI answers 403 to a crawler that names itself in its `User-Agent` (Meta's read past `/robots.txt`), on every page but `/robots.txt` and `/healthz`; link previews of its pages are refused too (morca #595). (#233)
