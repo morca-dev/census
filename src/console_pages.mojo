@@ -78,6 +78,12 @@ def site_pages() -> List[SitePage]:
             "",
         ),
         SitePage(
+            "/ai",
+            "Use with AI",
+            "How to add Mojourney's MCP server to Claude, Cursor or VS Code, and the tools it gives an agent.",
+            "",
+        ),
+        SitePage(
             "/how/changelog",
             "Changelog",
             "What changed in each release of the census.",

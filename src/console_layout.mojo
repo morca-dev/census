@@ -13,7 +13,7 @@ from overview import month_label, month_of_days
 
 
 comptime STYLE = """
-.prose{max-width:72ch}.prose p,.prose li{line-height:1.6}.prose ul{padding-left:1.2em}.prose li{margin:6px 0}
+.prose{max-width:72ch}pre.cmd{margin:8px 0 16px;padding:10px 12px;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere}.prose p,.prose li{line-height:1.6}.prose ul{padding-left:1.2em}.prose li{margin:6px 0}
 *{box-sizing:border-box}
 :root{color-scheme:light;--bg:#fbf9f7;--bg-alt:#f4f0ec;--surface:#fff;--surface-2:#f8f5f2;--border:#e3dcd4;--border-strong:#cfc5ba;--text:#17151a;--muted:#6b645d;--faint:#948c84;--ember:#c33c10;--ember-wash:#fdefe7;--lake:#0d6a70;--c0:#2b6cb0;--c1:#c33c10;--c2:#0d8a5a;--c3:#8e44ad;--c4:#a16207;--c5:#5b6770;--c6:#0e7490;--c7:#be185d;--c8:#4d7c0f;--c9:#0369a1;--shadow:0 1px 2px rgb(23 21 26 / .04),0 8px 24px -12px rgb(23 21 26 / .12);--radius:10px;--radius-sm:6px;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 @media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0e0d11;--bg-alt:#131218;--surface:#17161d;--surface-2:#1c1b23;--border:#2a2833;--border-strong:#3d3a48;--text:#eeeae4;--muted:#a49d95;--faint:#7b746d;--ember:#ff7a45;--ember-wash:#2a1710;--lake:#4ecdc4;--c0:#6aa9ff;--c1:#ff7a45;--c2:#4ecdc4;--c3:#c39bf0;--c4:#e3b341;--c5:#a9b4bd;--c6:#5ad1e6;--c7:#f472b6;--c8:#a3d95f;--c9:#7dd3fc;--shadow:0 1px 2px rgb(0 0 0 / .4),0 8px 24px -12px rgb(0 0 0 / .6)}}
@@ -182,16 +182,23 @@ def _help(id: String, label: String, text: String) -> String:
     content only) in a popover; `label` names what it explains for screen
     readers, and `id` must be unique on the page."""
     return String(
-        "<span class=hq><button type=button class=help aria-expanded=false aria-controls='", id,
-        "' aria-describedby='", id, "' aria-label='About ", html_escape(label), "'>?</button>",
-        "<span class=pop id='", id, "' role=tooltip hidden>", text, "</span></span>",
+        "<span class=hq><button type=button class=help aria-expanded=false aria-controls='",
+        id,
+        "' aria-describedby='",
+        id,
+        "' aria-label='About ",
+        html_escape(label),
+        "'>?</button>",
+        "<span class=pop id='",
+        id,
+        "' role=tooltip hidden>",
+        text,
+        "</span></span>",
     )
 
 
 def _nav(href: String, label: String, current: Bool) -> String:
-    return String(
-        "<a href='", href, "'", " aria-current=page" if current else "", ">", label, "</a>"
-    )
+    return String("<a href='", href, "'", " aria-current=page" if current else "", ">", label, "</a>")
 
 
 comptime BRAND = "Mojourney"
@@ -220,14 +227,13 @@ def _version_link() -> String:
     return String(
         "<a class=ver href='/how/changelog' title='",
         html_escape(String("commit ", commit) if commit else String("this build")),
-        "'>", html_escape(v), "</a>",
+        "'>",
+        html_escape(v),
+        "</a>",
     )
 
 
-comptime EDGE_CACHE = (
-    "public, max-age=60, s-maxage=1800, stale-while-revalidate=60,"
-    " stale-if-error=86400"
-)
+comptime EDGE_CACHE = "public, max-age=60, s-maxage=1800, stale-while-revalidate=60, stale-if-error=86400"
 """Cache-Control of a page or JSON answer: a minute in the browser, 30 minutes
 at Cloudflare's edge (the refresher's period; a cache rule for mojourney.dev
 must make HTML eligible for caching: README, "Edge caching"). Past that the
@@ -250,42 +256,72 @@ def _page(
     description: String = "",
     alternate: String = "",
 ) raises -> Response:
-    """The page around `body`; `section` is `repos`, `migrations` or `how`, the
+    """The page around `body`; `section` is `repos`, `migrations`, `how` or `ai`, the
     nav entry to light up (none for the overview and search); `q` fills the search box. An empty `title` is the
     home page, titled with the brand alone; others read "<title> · Mojourney".
     `description` is its meta description (`DESCRIPTION` when empty, most from
     `console_pages`) and `alternate` the URL of its JSON, if it has one."""
     var full = String(BRAND, ": ", SUBTITLE) if title == "" else String(title, " · ", BRAND)
     var h = String(
-        "<!doctype html><html lang=en><head><meta charset=utf-8>"
-        "<link rel=icon href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23b45309'/%3E%3Crect x='3' y='8' width='2.5' height='5' fill='%23fff'/%3E%3Crect x='6.75' y='4' width='2.5' height='9' fill='%23fff'/%3E%3Crect x='10.5' y='6' width='2.5' height='7' fill='%23fff'/%3E%3C/svg%3E\">",
+        (
+            '<!doctype html><html lang=en><head><meta charset=utf-8><link rel=icon href="data:image/svg+xml,%3Csvg'
+            " xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3'"
+            " fill='%23b45309'/%3E%3Crect x='3' y='8' width='2.5' height='5' fill='%23fff'/%3E%3Crect x='6.75' y='4'"
+            " width='2.5' height='9' fill='%23fff'/%3E%3Crect x='10.5' y='6' width='2.5' height='7'"
+            " fill='%23fff'/%3E%3C/svg%3E\">"
+        ),
         "<meta name=viewport content='width=device-width,initial-scale=1'>",
         "<meta name=color-scheme content='light dark'>",
-        "<meta name=description content='", html_escape(description if description else String(DESCRIPTION)), "'>",
-        String("<link rel=alternate type=application/json href='", html_escape(alternate), "'>") if alternate else String(),
-        "<title>", html_escape(full), "</title><style>", STYLE, "</style>",
+        "<meta name=description content='",
+        html_escape(description if description else String(DESCRIPTION)),
+        "'>",
+        String(
+            "<link rel=alternate type=application/json href='", html_escape(alternate), "'>"
+        ) if alternate else String(),
+        "<title>",
+        html_escape(full),
+        "</title><style>",
+        STYLE,
+        "</style>",
         posthog_snippet(getenv("POSTHOG_KEY"), "mojourney"),
         "</head><body>",
-        "<header class=top><div class=wrap><a class=brand href='/'>", MARK, BRAND, "</a>",
+        "<header class=top><div class=wrap><a class=brand href='/'>",
+        MARK,
+        BRAND,
+        "</a>",
         "<form class=search action='/search' role=search><input type=search name=q value='",
-        html_escape(q), "' placeholder='Search repos' aria-label='Search repos'",
+        html_escape(q),
+        "' placeholder='Search repos' aria-label='Search repos'",
         " autocomplete=off></form>",
-        "<nav>", _nav("/repos", "Repos", section == "repos"),
+        "<nav>",
+        _nav("/repos", "Repos", section == "repos"),
         _nav("/migrations", "Migrations", section == "migrations"),
         _nav("/live", "Live", section == "live"),
         _nav("/how", "How it works", section == "how"),
         "<span class=sep aria-hidden=true></span>",
-        "<a href='https://orca.mojourney.dev' rel=noopener title='The pipelines that build this census'>morca<span class=arrow> &#8599;</span></a><a href='https://mlake.dev' rel=noopener>mlake.dev<span class=arrow> &#8599;</span></a></nav></div></header>",
-        "<main><div class=wrap>", body, "</div></main>",
+        (
+            "<a href='https://orca.mojourney.dev' rel=noopener title='The pipelines that build this census'>morca<span"
+            " class=arrow> &#8599;</span></a><a href='https://mlake.dev' rel=noopener>mlake.dev<span class=arrow>"
+            " &#8599;</span></a></nav></div></header>"
+        ),
+        "<main><div class=wrap>",
+        body,
+        "</div></main>",
         "<footer><div class=wrap><p>An independent project; Mojo is a trademark of Modular Inc.",
         " Data from <a href='https://www.gharchive.org' rel=noopener>GH Archive</a>, read by the",
         " mojo-census pipelines on <a href='https://orca.mojourney.dev' rel=noopener>morca</a>: the hour's",
         " public GitHub events, the repositories with Mojo in them, and what their lock files",
         " say at each commit.</p>",
         "<nav><a href='https://mlake.dev' rel=noopener>mlake.dev</a>",
-        "<a href='", FEEDBACK, "' rel=noopener>Feedback</a>",
+        "<a href='",
+        FEEDBACK,
+        "' rel=noopener>Feedback</a>",
         "<a href='https://github.com/morca-dev' rel=noopener>GitHub</a>",
-        "<a href='/api/repos'>JSON</a>", _version_link(), "</nav></div></footer>", HELP_JS, "</body></html>",
+        "<a href='/ai'>Use with AI</a><a href='/api/repos'>JSON</a>",
+        _version_link(),
+        "</nav></div></footer>",
+        HELP_JS,
+        "</body></html>",
     )
     var resp = Response(status=200, reason="OK", body=List[UInt8](h.as_bytes()))
     resp.headers.set("Content-Type", "text/html; charset=utf-8")
@@ -349,8 +385,11 @@ def _chips(topics: List[String], limit: Int = 6) -> String:
     var h = String("<div class=chips>")
     for i in range(min(len(topics), limit)):
         h.write(
-            "<a class=chip href='/search?q=", html_escape(topics[i]), "'>",
-            html_escape(topics[i]), "</a>",
+            "<a class=chip href='/search?q=",
+            html_escape(topics[i]),
+            "'>",
+            html_escape(topics[i]),
+            "</a>",
         )
     if len(topics) > limit:
         h.write("<span class=chip>+", len(topics) - limit, "</span>")
