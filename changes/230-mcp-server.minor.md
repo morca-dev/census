@@ -1,1 +1,0 @@
-- **MCP server:** `POST /mcp` serves the census to agents as six read-only MCP tools, and with `POSTHOG_KEY` set each request is a PostHog event. (#230)
