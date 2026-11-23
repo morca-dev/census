@@ -1,0 +1,1 @@
+- **morca-mojo 0.43.0:** hosts you run yourself can be joined with `morca host join` (morca #591), drained and removed from Ops > Pools or with `morca --remote host ...` (morca #590), and follow the server's worker image (`morca host upgrade`, morca #593). Nothing changes for the census unless a host is joined. (#231)
