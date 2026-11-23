@@ -3,6 +3,12 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.19.0 - 2026-11-23
+
+- **MCP server:** `POST /mcp` serves the census to agents as six read-only MCP tools, and with `POSTHOG_KEY` set each request is a PostHog event. (#230)
+
+- **morca-mojo 0.43.0:** hosts you run yourself can be joined with `morca host join` (morca #591), drained and removed from Ops > Pools or with `morca --remote host ...` (morca #590), and follow the server's worker image (`morca host upgrade`, morca #593). Nothing changes for the census unless a host is joined. (#231)
+
 ## 1.18.0 - 2026-11-22
 
 - **morca-mojo 0.42.0:** a pipeline's page in the morca UI keeps the links to its code after a run starts (morca #584); self-hosted pools and `morca host` (morca #587); opt-in working-set probing (`learn = "working_set"`, morca #588) and swap offload (`MORCA_RUN_SWAP_PCT`, morca #589), both off unless set. dista-mojo at its published 0.6.0. (#227)
