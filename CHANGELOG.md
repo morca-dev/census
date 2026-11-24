@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.22.0 - 2026-11-24
+
+- **Most stars:** the home page lists the ten most-starred repos under Rising, and `/api/overview` has them as `most_starred`. (#237)
+
 ## 1.21.0 - 2026-11-23
 
 - **Use with AI:** a `/ai` page on adding the MCP server to Claude, Cursor or VS Code, linked from the footer and `/llms.txt`, and a `server.json` for the MCP Registry. (#235)
