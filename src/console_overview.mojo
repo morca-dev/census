@@ -1,5 +1,5 @@
 """The console's home page (`/`): the headline cards, the repos per Mojo
-version as donuts, the growth curves, Rising, Most active and Most depended
+version as donuts, the growth curves, Rising, Most stars, Most active and Most depended
 on."""
 
 from flare.http import Request, Response, html_escape, internal_error, redirect
@@ -608,6 +608,31 @@ def overview(req: Request, c: Cache) raises -> Response:
                     "</td><td class=num>", _signed(c.rising_forks[i]),
                     "</td><td class=num>", _n(c.rising_used_by[i]),
                     "</td><td class=num>", _n(c.rising_score[i]), "</td></tr>",
+                )
+            h.write("</tbody></table></div>")
+        h.write(
+            "<h2><a href='",
+            html_escape(list_url(ListQuery(String("stars"), False, String(), False, String(), False, String()))),
+            "'>Most stars</a>",
+            _help(
+                "h-stars", "Most stars",
+                "The repos with the most GitHub stars now, and the stars they gained in the last 30 days.",
+            ),
+            "</h2>",
+        )
+        if len(c.starred) > 0:
+            h.write(
+                "<div class=tbl><table><thead><tr>",
+                "<th>Repository</th><th class=num>Stars</th><th class=num>Stars, 30 days</th>",
+                "<th class=num>Forks</th><th class=num>Used by</th></tr></thead><tbody>",
+            )
+            for i in range(len(c.starred)):
+                h.write(
+                    "<tr><td><a class=repo href='/repos/", html_escape(c.starred[i]), "'>",
+                    html_escape(c.starred[i]), "</a></td><td class=num>", _n(c.starred_stars[i]),
+                    "</td><td class=num>", _signed(c.starred_gain[i]),
+                    "</td><td class=num>", _n(c.starred_forks[i]),
+                    "</td><td class=num>", _n(c.starred_used_by[i]), "</td></tr>",
                 )
             h.write("</tbody></table></div>")
         h.write(

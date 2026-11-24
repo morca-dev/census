@@ -1,0 +1,1 @@
+- **Most stars:** the home page lists the ten most-starred repos under Rising, and `/api/overview` has them as `most_starred`. (#237)
