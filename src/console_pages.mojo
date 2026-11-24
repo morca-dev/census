@@ -100,7 +100,7 @@ def api_pages() -> List[SitePage]:
             "Overview numbers",
             (
                 "The overview's numbers: repos, commits and lines of Mojo now and 30 days"
-                " ago, repos per Mojo version, monthly series, rising, most active and most"
+                " ago, repos per Mojo version, monthly series, rising, most starred, most active and most"
                 " depended-on repos, and what the lake holds."
             ),
             "",

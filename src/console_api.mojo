@@ -126,6 +126,14 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             ',"forks_30d":', c.rising_forks[i], ',"used_by":', c.rising_used_by[i],
             ',"score":', c.rising_score[i], ',"stars":', c.rising_stars[i], "}",
         )
+    out += '],"most_starred":['
+    for i in range(len(c.starred)):
+        if i > 0:
+            out += ","
+        out.write(
+            '{"repo":', _q(c.starred[i]), ',"stars":', c.starred_stars[i], ',"stars_30d":', c.starred_gain[i],
+            ',"forks":', c.starred_forks[i], ',"used_by":', c.starred_used_by[i], "}",
+        )
     out.write(
         '],"rising_weights":{"forks":', RISING_FORK_WEIGHT, ',"used_by":', RISING_USED_BY_WEIGHT,
         '},"most_depended_on":[',

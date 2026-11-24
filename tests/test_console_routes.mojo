@@ -448,5 +448,25 @@ def test_registry_auth() raises:
     assert_equal(resp.headers.get("Content-Type"), "text/plain; charset=utf-8")
 
 
+def test_most_stars() raises:
+    var c = _cache()
+    # The fixture's overview counts no repos, which the home page shows as "No repos yet".
+    c.ov.repos = len(c.libs)
+    c.starred = ["acme/tomlkit"]
+    c.starred_stars = [12]
+    c.starred_gain = [4]
+    c.starred_forks = [3]
+    c.starred_used_by = [1]
+    var r = _router_of(c^)
+    var home = _body(_get(r, "/"))
+    var rising = home.find("<h2>Rising").or_else(-1)
+    var k = home.find("'>Most stars</a>").or_else(-1)
+    assert_true(rising > 0 and k > rising, String(rising, " ", k))
+    assert_true(k < home.find("'>Most active</a>").or_else(-1))
+    assert_true("<a class=repo href='/repos/acme/tomlkit'>acme/tomlkit</a></td><td class=num>12</td><td class=num><span class=up>+4</span></td>" in home)
+    var j = _body(_get(r, "/api/overview"))
+    assert_true('"most_starred":[{"repo":"acme/tomlkit","stars":12,"stars_30d":4,"forks":3,"used_by":1}]' in j)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

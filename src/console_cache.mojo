@@ -53,6 +53,8 @@ comptime REFRESH_SECS = 1800
 comptime RETRY_SECS = 30
 """How soon to look again after a failed build or while nothing is built."""
 comptime RISING_SHOWN = 10
+comptime STARRED_SHOWN = 10
+"""How many repos Most stars lists."""
 comptime ACTIVE_SHOWN = 10
 comptime DEPENDED_SHOWN = 10
 
@@ -135,6 +137,14 @@ struct Cache(Movable):
     var rising_score: List[Int64]
     var rising_stars: List[Int64]
     """Stars now."""
+    var starred: List[String]
+    """The `STARRED_SHOWN` repos with the most stars now."""
+    var starred_stars: List[Int64]
+    var starred_gain: List[Int64]
+    """Stars gained in the last 30 days."""
+    var starred_forks: List[Int64]
+    """Forks now."""
+    var starred_used_by: List[Int64]
     var depended: List[Depended]
     """The `DEPENDED_SHOWN` rows of Most depended on (`most_depended`):
     the repos the most census repos depend on, an owner's collapsed into
@@ -196,6 +206,11 @@ struct Cache(Movable):
         self.rising_used_by = List[Int64]()
         self.rising_score = List[Int64]()
         self.rising_stars = List[Int64]()
+        self.starred = List[String]()
+        self.starred_stars = List[Int64]()
+        self.starred_gain = List[Int64]()
+        self.starred_forks = List[Int64]()
+        self.starred_used_by = List[Int64]()
         self.depended = List[Depended]()
         self.sources = Sources()
         self.built_day = 0
@@ -295,6 +310,11 @@ struct Cache(Movable):
         self.rising_used_by = List[Int64]()
         self.rising_score = List[Int64]()
         self.rising_stars = List[Int64]()
+        self.starred = List[String]()
+        self.starred_stars = List[Int64]()
+        self.starred_gain = List[Int64]()
+        self.starred_forks = List[Int64]()
+        self.starred_used_by = List[Int64]()
         for i in top_gains(score_list, RISING_SHOWN):
             var g = gains.get(libs[i].repo, Gain(0, 0))
             self.rising.append(libs[i].repo)
@@ -303,6 +323,12 @@ struct Cache(Movable):
             self.rising_used_by.append(Int64(len(libs[i].used_by)))
             self.rising_score.append(score_list[i])
             self.rising_stars.append(libs[i].stars)
+        for i in top_gains(stars, STARRED_SHOWN):
+            self.starred.append(libs[i].repo)
+            self.starred_stars.append(libs[i].stars)
+            self.starred_gain.append(gains.get(libs[i].repo, Gain(0, 0)).stars)
+            self.starred_forks.append(libs[i].forks)
+            self.starred_used_by.append(Int64(len(libs[i].used_by)))
         self.depended = most_depended(names, users, stars, forks, DEPENDED_SHOWN)
         var details = Dict[String, RepoData]()
         for e in histories().items():
