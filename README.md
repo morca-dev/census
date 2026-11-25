@@ -1,5 +1,7 @@
 # mojo-census
 
+[![Mojo version](https://mojourney.dev/badge/morca-dev/census/mojo.svg)](https://mojourney.dev/repos/morca-dev/census)
+
 The code behind [Mojourney: the Mojo ecosystem census](https://mojourney.dev).
 
 A lake of GitHub activity built on [magmalake](https://magmalake.org), and
