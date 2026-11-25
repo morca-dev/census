@@ -5,6 +5,7 @@ releases and similar repos."""
 from flare.http import Request, Response, internal_error, not_found, ok_json, redirect
 
 from days import day_text
+from deps import other_owners
 from jscan import micros_to_iso
 from committype import typed_commits
 from contributors import RepoContributors
@@ -234,6 +235,7 @@ def _lib_json(l: Library, category: String = String()) -> String:
         ',"aliases":', _strs_json(l.aliases),
         ',"declared_deps":', "null" if l.declared_deps < 0 else String(l.declared_deps),
         ',"depends_on":', _strs_json(l.depends_on), ',"used_by":', _strs_json(l.used_by),
+        ',"used_by_other_owners":', len(other_owners(l.repo, l.used_by)),
         ',"used_by_forks":', _strs_json(l.used_by_forks), ',"second_degree":', _strs_json(l.second_degree),
         ',"dependencies":', _strs_json(l.declared),
         ',"category":', _q(category) if category.byte_length() > 0 else "null", "}",

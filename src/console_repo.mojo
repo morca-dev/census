@@ -5,6 +5,7 @@ contributors per month, releases and tags, issues and pull requests, migrations 
 from flare.http import Request, Response, html_escape, internal_error, not_found, redirect
 from contributors import RepoContributors
 from days import day_text
+from deps import other_owners
 from model import Library, MonthActivity, Point, day
 from similar import Neighbor
 from categories import CATEGORIES_VERSION, VOTERS, category_title
@@ -12,6 +13,7 @@ from committype import commit_type_keys, commit_type_title, has_subjects, typed_
 from overview import DAY_US, month_label, month_of_days, tool_code, unversioned
 from versions import source_label, usable
 
+from console_badge import badges_section
 from console_cache import Cache, RepoData
 from issues import IssueRow, RepoIssues
 from console_how import MORCA_UI
@@ -350,8 +352,11 @@ def _used_by_stat(l: Library) -> String:
     """The "Used by" tile, which counts the dependents through a fork of it
     too, and beside it the second degree, when it has dependents."""
     var note = String("census repos that depend on it")
-    if len(l.used_by_forks) > 0:
-        note.write(" (", len(l.used_by_forks), " through forks)")
+    if len(l.used_by) > 0:
+        note.write(" (", len(other_owners(l.repo, l.used_by)), " from other owners")
+        if len(l.used_by_forks) > 0:
+            note.write(", ", len(l.used_by_forks), " through forks")
+        note.write(")")
     var h = _stat("Used by", _n(Int64(len(l.used_by))), note)
     if len(l.used_by) > 0:
         h += _stat("Second degree", _n(Int64(len(l.second_degree))), "more that depend on those")
@@ -369,14 +374,20 @@ def _repo_links(repos: List[String]) -> String:
 
 
 def _deps_section(l: Library) -> String:
-    """What it depends on and what depends on it, when there is any."""
-    if len(l.declared) == 0 and len(l.used_by) == 0:
-        return String()
+    """What it depends on and what depends on it. `#used-by`, where its
+    badge links, is always there: with the dependents, how many of them are
+    from other owners (the badge's number), or that there are none yet."""
     var h = String("<h2>Dependencies</h2><div class=prose>")
     if len(l.depends_on) > 0:
         h.write("<p>Depends on ", _repo_links(l.depends_on), ".</p>")
     if len(l.used_by) > 0:
-        h.write("<p>Used by ", _repo_links(l.used_by), ".</p>")
+        var others = len(other_owners(l.repo, l.used_by))
+        h.write(
+            "<p id=used-by>Used by ", len(l.used_by), " census repo" if len(l.used_by) == 1 else " census repos",
+            ", ", others, " from other owners: ", _repo_links(l.used_by), ".</p>",
+        )
+    else:
+        h.write("<p id=used-by class=mute>No census repo depends on it yet.</p>")
     if len(l.used_by_forks) > 0:
         h.write("<p>Through a fork of it: ", _repo_links(l.used_by_forks), ".</p>")
     if len(l.second_degree) > 0:
@@ -572,6 +583,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             "</div></div>",
             "<h2>Over time</h2>", over_time(repo, l, data, chart_view(req.query_param("chart"))),
             _deps_section(l),
+            badges_section(repo),
             _similar_section(repo, c),
             "<h2>Stars per month</h2>",
         )
