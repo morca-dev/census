@@ -9,7 +9,6 @@ broken image. It also keeps what it is given, so each answer says how long
 
 from flare.http import Handler, Request, Response, html_escape
 
-from deps import other_owners
 from model import Library
 from swap import Swap
 from versions import usable
@@ -44,11 +43,10 @@ struct Badge(Copyable, Movable):
 
 
 def used_by_badge(l: Library) raises -> Badge:
-    """`used by | 12 projects`: the census repos of other owners that depend
-    on it, directly or through a fork of it. Its owner's own repos are left
-    out, so the number says who else relies on it; the page it links to
-    lists them all."""
-    var n = len(other_owners(l.repo, l.used_by))
+    """`used by | 12 projects`: every census repo that depends on it,
+    directly or through a fork of it, its owner's own repos included. The
+    page it links to lists them and says how many are from other owners."""
+    var n = len(l.used_by)
     return Badge(
         "used by",
         String(_n(Int64(n)), " project" if n == 1 else " projects"),
@@ -261,7 +259,7 @@ def badges_section(repo: String) -> String:
         "<h2 id=badges>Badges</h2><div class=prose><p>",
         "<a href='/repos/", r, "#used-by'><img src='/badge/", r, "/used-by.svg' alt='Used by' height=20></a> ",
         "<img src='/badge/", r, "/mojo.svg' alt='Mojo version' height=20></p>",
-        "<p>For this repo's README: how many census repos from other owners depend on it, directly or",
+        "<p>For this repo's README: how many census repos depend on it, directly or",
         " through a fork, and the Mojo version the census read. They update with the census, about an hour",
         " behind.</p><pre class=cmd><code>", html_escape(badge_markdown(repo)), "</code></pre>",
         "<p><button type=button class=copy onclick=\"navigator.clipboard.writeText(",
