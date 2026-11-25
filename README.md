@@ -583,9 +583,9 @@ the page's own origin, with memory-only persistence (no cookies, no
 `localStorage`, so no consent banner), and `site: "mojourney"` registered on
 every event (morca's UI sends `site: "morca"`), so one PostHog project can hold
 both sites. If the key is unset or not a `phc_` key, the snippet is left out
-(`src/analytics.mojo`). With the same key, the console also sends PostHog an
-`mcp_request` event for each `/mcp` request from the server, batched every
-10 s by a thread of its own, with a daily-salted hash of the client's IP as
+(`src/analytics.mojo`). With the same key, the console also sends PostHog the
+MCP Analytics events of `/mcp` (`$mcp_tool_call`, `$mcp_tools_list` and
+`$mcp_initialize`) from the server, batched every 10 s by a thread of its own, with a daily-salted hash of the client's IP as
 its id and no IP or person profile (`src/mcp_events.mojo`). The console doesn't serve `/ph`: on mojourney.dev
 the `mojourney-ph` Cloudflare Worker in magmalake/magmalake.org does
 (`npx wrangler deploy -c worker/mojourney-ph/wrangler.jsonc`).

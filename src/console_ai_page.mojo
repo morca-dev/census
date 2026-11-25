@@ -62,8 +62,9 @@ def ai_page(req: Request) raises -> Response:
         " <a href='/llms-full.txt'>/llms-full.txt</a> has the How it works pages as text.",
         " The JSON under <a href='/api/repos'>/api/</a> is the same data without MCP.</p>",
         "<h2>Limits and what is logged</h2>",
-        "<p>Up to 60 tool calls a minute from one client. Each request is counted with its",
-        " client's name and the tool's arguments, cut short; no IP address is kept.</p>",
+        "<p>Up to 60 tool calls a minute from one client. Each connection and tool call is",
+        " counted with its client's name, version and user agent and the tool's arguments, cut",
+        " short; no IP address is kept.</p>",
         "</div>",
     )
     return _page("Use with AI", h^, "ai", description=page_line("/ai"))

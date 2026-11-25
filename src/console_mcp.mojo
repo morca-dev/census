@@ -17,7 +17,8 @@ the `url` of the page on mojourney.dev.
 Limits: the body is at most `MAX_BODY` bytes, a bad message gets a JSON-RPC
 error (never a 500), and each client (by `CF-Connecting-IP`) may make
 `MCP_CALLS_PER_MINUTE` tools/calls a minute (default 60), then gets 429.
-Every request is an `mcp_request` event in PostHog (`mcp_events`).
+`initialize`, `tools/list` and each call to a tool are events in PostHog, in
+its MCP Analytics schema (`mcp_events`).
 """
 
 from std.memory.alloc import unsafe_alloc
@@ -39,7 +40,9 @@ from swap import Swap
 from console_cache import Cache
 from console_layout import SITE_URL, census_version
 from console_list import _matches, meaning_hits
-from mcp_events import ClientIds, EventQueue, McpEvent, client_of_agent, cut, event_json, js, trim_arguments
+from mcp_events import (
+    ClientIds, EventQueue, HEADER_MAX, McpEvent, client_of_agent, cut, event_json, js, session_id, trim_arguments,
+)
 
 
 comptime MAX_BODY = 64 * 1024
@@ -54,6 +57,7 @@ comptime PARSE_ERROR = -32700
 comptime INVALID_REQUEST = -32600
 comptime METHOD_NOT_FOUND = -32601
 comptime INVALID_PARAMS = -32602
+comptime INTERNAL_ERROR = -32603
 comptime RATE_LIMITED = -32000
 
 
@@ -781,6 +785,8 @@ def call_tool(
 struct Outcome(Movable):
     """What a request asked and how it went, for its event."""
 
+    var event: String
+    """The PostHog event it is, "" for none."""
     var method: String
     var tool: String
     var arguments: String
@@ -788,9 +794,11 @@ struct Outcome(Movable):
     var client_version: String
     var protocol_version: String
     var status: String
+    var error_type: String
     var results: Int
 
     def __init__(out self):
+        self.event = String()
         self.method = String()
         self.tool = String()
         self.arguments = String()
@@ -798,6 +806,7 @@ struct Outcome(Movable):
         self.client_version = String()
         self.protocol_version = String()
         self.status = String("ok")
+        self.error_type = String()
         self.results = 0
 
 
@@ -821,6 +830,10 @@ def _rpc_result(id: String, result: String) raises -> Response:
 
 def _rpc_error(mut oc: Outcome, http: Int, id: String, code: Int, message: String) raises -> Response:
     oc.status = "rpc_error" if code != RATE_LIMITED else "rate_limited"
+    if code == RATE_LIMITED:
+        oc.error_type = "rate_limited"
+    else:
+        oc.error_type = "internal" if code == INTERNAL_ERROR else "validation"
     return _json_response(
         http, String('{"jsonrpc":"2.0","id":', id, ',"error":{"code":', code, ',"message":', js(message), "}}")
     )
@@ -918,6 +931,7 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
     if params.found() and _is_null(b, params):
         params = Range(-1, -1)
     if method == "initialize":
+        oc.event = "$mcp_initialize"
         var asked = text(b, field(b, params, "protocolVersion")) if params.found() else String()
         var version = asked if asked in supported_protocols() else String(DEFAULT_PROTOCOL)
         oc.protocol_version = version
@@ -944,6 +958,7 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
     if method == "ping":
         return _rpc_result(id, "{}")
     if method == "tools/list":
+        oc.event = "$mcp_tools_list"
         oc.results = len(tool_names())
         return _rpc_result(id, String('{"tools":', tools_json(), "}"))
     if method != "tools/call":
@@ -957,6 +972,8 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
         args = Range(-1, -1)
     oc.tool = cut(name, 100)
     oc.arguments = trim_arguments(b, args)
+    if name in tool_names():
+        oc.event = "$mcp_tool_call"
     var minute = _minute_now()
     if not st.admit_call(client_ip(req), minute):
         var resp = _rpc_error(
@@ -971,6 +988,7 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
         return _rpc_error(oc, 200, id, INVALID_PARAMS, "`arguments` must be an object.")
     if not c.ready:
         oc.status = "tool_error"
+        oc.error_type = "internal"
         return _rpc_result(id, _tool_result("The census is warming up (reading its data for the first time); try again in a minute.", True))
     try:
         var qv = List[Float32]()
@@ -983,6 +1001,7 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
         return _rpc_result(id, _tool_result(got.json, False))
     except e:
         oc.status = "tool_error"
+        oc.error_type = "validation"
         return _rpc_result(id, _tool_result(String(e), True))
 
 
@@ -992,10 +1011,14 @@ def mcp_event(req: Request, oc: Outcome, resp: Response, mut st: McpState, start
         t = now()
     except:
         pass
+    var ms = (Int(perf_counter_ns()) - started_ns) // 1_000_000
+    var at_us = t * 1_000_000 - Int64(ms) * 1000
     return McpEvent(
-        st.ids.id_of(client_ip(req), t // 86400), t * 1_000_000, oc.method, oc.tool,
-        oc.arguments, oc.client_name, oc.client_version, oc.protocol_version, oc.status, oc.results,
-        (Int(perf_counter_ns()) - started_ns) // 1_000_000, len(resp.body),
+        oc.event, st.ids.id_of(client_ip(req), t // 86400), session_id(at_us), at_us, census_version(), oc.tool,
+        oc.arguments, tool_names() if oc.event == "$mcp_tools_list" else List[String](), oc.client_name,
+        oc.client_version, cut(String(req.headers.get("User-Agent").strip()), HEADER_MAX),
+        cut(String(req.headers.get("X-Anthropic-Client").strip()), HEADER_MAX), oc.protocol_version, oc.status,
+        oc.error_type, oc.results, ms, len(resp.body),
     )
 
 
@@ -1020,7 +1043,7 @@ struct McpSite(Copyable, Handler):
             resp = handle_mcp(req, held[], st, oc, self.model)
         except e:
             print("console: MCP:", e)
-            resp = _rpc_error(oc, 200, "null", -32603, "Internal error.")
-        if st.events.on():
+            resp = _rpc_error(oc, 200, "null", INTERNAL_ERROR, "Internal error.")
+        if st.events.on() and oc.event.byte_length() > 0:
             st.events.push(event_json(mcp_event(req, oc, resp, st, started)))
         return resp^
