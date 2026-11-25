@@ -528,7 +528,10 @@ def activity_all(repo: String = "") raises -> Dict[String, List[MonthActivity]]:
             a.pushes += i64_at(b.column(c_push), r)
             a.days_active += 1
     for e in out.items():
-        ref list = out[e.key]
+        # The key by value: one borrowed from the dict can't index it for a
+        # mutation.
+        var key = e.key.copy()
+        ref list = out[key]
         for i in range(1, len(list)):
             var j = i
             while j > 0 and list[j - 1].month > list[j].month:
@@ -672,7 +675,10 @@ def releases_all(repo: String = "") raises -> Dict[String, List[Release]]:
                     commit, ver,
                 ))
     for e in out.items():
-        ref list = out[e.key]
+        # The key by value: one borrowed from the dict can't index it for a
+        # mutation.
+        var key = e.key.copy()
+        ref list = out[key]
         for i in range(1, len(list)):
             var j = i
             while j > 0 and list[j - 1].at < list[j].at:
@@ -737,8 +743,11 @@ def histories(repo: String = "") raises -> Dict[String, List[Point]]:
             )
     # By seq (the scan's order is the files').
     for e in out.items():
-        ref list = out[e.key]
-        ref sq = seqs[e.key]
+        # The key by value: one borrowed from the dict can't index it for a
+        # mutation.
+        var key = e.key.copy()
+        ref list = out[key]
+        ref sq = seqs[key]
         for i in range(1, len(list)):
             var j = i
             while j > 0 and sq[j - 1] > sq[j]:
