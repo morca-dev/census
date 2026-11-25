@@ -3,6 +3,12 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.24.0 - 2026-11-25
+
+- **Mojo 1.3.0.dev2026112505:** the census and every tin it uses move from 1.3.0.dev2026111805, which miscompiled some `while True:` loops. Parquet files are now written and read by a pure-Mojo zstd, which is slower than libzstd (about 1.5x to 2.5x on the codec alone). (#243)
+
+- **README badges:** the used-by badge counts every census repo that depends on the library, its owner's own too. (#245)
+
 ## 1.23.0 - 2026-11-25
 
 - **MCP analytics:** `/mcp` sends PostHog's MCP Analytics events (`$mcp_tool_call`, `$mcp_tools_list`, `$mcp_initialize`) instead of `mcp_request`. (#239)
