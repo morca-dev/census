@@ -6,6 +6,7 @@ release.
 ## 1.23.0 - 2026-11-25
 
 - **MCP analytics:** `/mcp` sends PostHog's MCP Analytics events (`$mcp_tool_call`, `$mcp_tools_list`, `$mcp_initialize`) instead of `mcp_request`. (#239)
+- **README badges:** each repo's page has a "used by" and a Mojo version badge to paste into its README, served under `/badge/`. (#242)
 
 ## 1.22.0 - 2026-11-24
 
