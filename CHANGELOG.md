@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.23.0 - 2026-11-25
+
+- **MCP analytics:** `/mcp` sends PostHog's MCP Analytics events (`$mcp_tool_call`, `$mcp_tools_list`, `$mcp_initialize`) instead of `mcp_request`. (#239)
+
 ## 1.22.0 - 2026-11-24
 
 - **Most stars:** the home page lists the ten most-starred repos under Rising, and `/api/overview` has them as `most_starred`. (#237)
