@@ -912,6 +912,17 @@ struct Depended(Copyable, Movable):
         self.forks = 0
 
 
+def other_owners(repo: String, users: List[String]) -> List[String]:
+    """Of `users`, the repositories whose owner isn't `repo`'s: who else
+    depends on it, which its badge counts (#241)."""
+    var owner = owner_of(repo)
+    var out = List[String]()
+    for u in users:
+        if owner_of(u) != owner:
+            out.append(u)
+    return out^
+
+
 def _internal(owner: String, users: List[String]) -> Int64:
     var n = Int64(0)
     for u in users:

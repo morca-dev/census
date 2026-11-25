@@ -530,6 +530,7 @@ minute in the browser, 30 minutes at Cloudflare, the refresher's period.
 Cloudflare may then serve its copy for a minute while it refetches, and for
 a day while the console can't answer, so a deploy's restart (connection
 refused, then the warming-up 503) shows readers the last page, not an error.
+The README badges (`/badge/...`) say an hour instead, for GitHub's image proxy too, and five minutes for a repo the census doesn't have.
 Only pages someone has fetched recently at that edge have a copy. The tunnel's
 traffic goes through Cloudflare's proxy, but by default Cloudflare caches only
 static file types, never HTML (`cf-cache-status: DYNAMIC`), so mojourney.dev

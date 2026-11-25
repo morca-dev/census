@@ -11,6 +11,7 @@ from querymodel import QueryModel
 
 from console_ai_page import ai_page, registry_auth
 from console_ai import llms_full_response, llms_response, robots, sitemap_response
+from console_badge import MOJO, USED_BY, BadgeSite
 from console_api import index_json, overview_json, repo_json, search_json, versions_json
 from console_cache import Cache
 from console_how import HowSite, changelog, optimizations
@@ -169,6 +170,11 @@ def console_router(cache: Int, checks: Int, model: Int, live: Int, mcp: Int = 0)
     r.get("/api/versions", Site(9, cache, checks, model))
     r.get("/api/search", Site(6, cache, checks, model))
     r.get("/api/repos/:owner/:name", Site(7, cache, checks, model))
+    # The README badges (#241): their own handler, which caches for longer.
+    r.get("/badge/:owner/:name/used-by.svg", BadgeSite(cache, USED_BY, False))
+    r.get("/badge/:owner/:name/used-by.json", BadgeSite(cache, USED_BY, True))
+    r.get("/badge/:owner/:name/mojo.svg", BadgeSite(cache, MOJO, False))
+    r.get("/badge/:owner/:name/mojo.json", BadgeSite(cache, MOJO, True))
     r.get("/checks", Site(10, cache, checks, model))
     r.get("/llms.txt", Site(11, cache, checks, model))
     r.get("/llms-full.txt", Site(12, cache, checks, model))

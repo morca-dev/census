@@ -10,6 +10,7 @@ from flare.http import Request, Response, Router
 
 from checks import CheckRun
 from console_ai import html_text
+from console_badge import BADGE_CACHE, BRAND_COLOR, MISSING_CACHE, Badge, badge_svg, text_width, version_badge, version_text
 from console_cache import Cache, RepoData
 from console_repo import chart_view, month_counts, month_span
 from issues import IssueRow
@@ -35,6 +36,11 @@ def _unlisted() -> List[String]:
         "/sitemap.xml",
         "/robots.txt",
         "/.well-known/mcp-registry-auth",  # the MCP Registry's proof of the domain
+        # The README badges; each repo's page has the Markdown (#241).
+        "/badge/{owner}/{name}/used-by.svg",
+        "/badge/{owner}/{name}/used-by.json",
+        "/badge/{owner}/{name}/mojo.svg",
+        "/badge/{owner}/{name}/mojo.json",
         "/mcp",  # the MCP server, POST only; /llms.txt names it apart (test_mcp)
     ]
 
@@ -446,6 +452,85 @@ def test_registry_auth() raises:
     assert_equal(resp.status, 200)
     assert_true(_body(resp).startswith("v=MCPv1; k=ed25519; p="))
     assert_equal(resp.headers.get("Content-Type"), "text/plain; charset=utf-8")
+
+
+def test_badges() raises:
+    # Used by counts the other owners' repos, through a fork too (#241).
+    var c = _cache()
+    c.libs[0].used_by = ["acme/http", "beta/app", "gamma/tool"]
+    c.libs[0].used_by_forks = ["gamma/tool"]
+    c.libs[1].mojo_version = "1.3.0.dev2026111805"
+    var r = _router_of(c^)
+    var used = _get(r, "/badge/acme/tomlkit/used-by.svg")
+    assert_equal(used.status, 200)
+    assert_equal(used.headers.get("Content-Type"), "image/svg+xml; charset=utf-8")
+    assert_equal(used.headers.get("Cache-Control"), BADGE_CACHE)
+    assert_true(_body(used).startswith("<svg "))
+    assert_true('aria-label="used by: 2 projects"' in _body(used))
+    assert_true(BRAND_COLOR in _body(used))
+    assert_equal(
+        _body(_get(r, "/badge/acme/tomlkit/used-by.json")),
+        '{"schemaVersion":1,"label":"used by","message":"2 projects","color":"b45309","cacheSeconds":3600}',
+    )
+    # None yet: grey, and still a badge.
+    var none = _body(_get(r, "/badge/acme/http/used-by.svg"))
+    assert_true('aria-label="used by: 0 projects"' in none)
+    assert_false(BRAND_COLOR in none)
+    assert_true('aria-label="mojo: 25.1"' in _body(_get(r, "/badge/acme/tomlkit/mojo.svg")))
+    assert_true('"message":"1.3.0 nightly"' in _body(_get(r, "/badge/acme/http/mojo.json")))
+    # An old name and another case find the repo.
+    assert_true('"message":"1.3.0 nightly"' in _body(_get(r, "/badge/old-owner/mojo-http/mojo.json")))
+    assert_true("2 projects" in _body(_get(r, "/badge/Acme/TomlKit/used-by.svg")))
+    # A repo the census doesn't have: a 200 and an image, kept for less long.
+    var missing = _get(r, "/badge/nobody/nothing/used-by.svg")
+    assert_equal(missing.status, 200)
+    assert_true('aria-label="used by: not indexed"' in _body(missing))
+    assert_equal(missing.headers.get("Cache-Control"), MISSING_CACHE)
+    # The ETag answers a revalidation with a 304.
+    var tag = used.headers.get("ETag")
+    assert_true(tag.startswith('W/"'))
+    var again = Request("GET", "/badge/acme/tomlkit/used-by.svg")
+    again.headers.set("If-None-Match", tag)
+    var not_modified = r.serve(again)
+    assert_equal(not_modified.status, 304)
+    assert_equal(len(not_modified.body), 0)
+    assert_equal(not_modified.headers.get("ETag"), tag)
+    # Before the first build: no badge, and nothing to cache.
+    var cold = _get(_router_of(Cache()), "/badge/acme/tomlkit/used-by.svg")
+    assert_equal(cold.status, 503)
+    assert_equal(cold.headers.get("Cache-Control"), "no-store")
+
+
+def test_badge_text() raises:
+    assert_equal(version_text("1.2.0"), "1.2.0")
+    assert_equal(version_text("1.3.0.dev2026111805"), "1.3.0 nightly")
+    assert_equal(version_text("0123456789012345678901234567890"), "012345678901234567890123")
+    assert_equal(text_width("used by"), 70 + 57 + 66 + 69 + 39 + 69 + 65)
+    var l = _lib("acme/x", "", List[String]())
+    l.mojo_version = ""
+    l.version_estimate = "1.2"
+    assert_equal(version_badge(l).message, "~1.2")
+    l.version_estimate = ""
+    assert_equal(version_badge(l).message, "unknown")
+    assert_equal(badge_svg(Badge("a<b", "1 & 2", "#555", True)).count("a&lt;b"), 4)
+
+
+def test_repo_page_badges() raises:
+    var c = _cache()
+    c.libs[0].used_by = ["acme/http", "beta/app"]
+    var r = _router_of(c^)
+    var page = _body(_get(r, "/repos/acme/tomlkit"))
+    assert_true("<p id=used-by>Used by 2 census repos, 1 from other owners: " in page)
+    assert_true("(1 from other owners)" in page)
+    assert_true("<h2 id=badges>Badges</h2>" in page)
+    assert_true("<img src='/badge/acme/tomlkit/used-by.svg'" in page)
+    assert_true(
+        "[![Used by](https://mojourney.dev/badge/acme/tomlkit/used-by.svg)](https://mojourney.dev/repos/acme/tomlkit#used-by)"
+        in page
+    )
+    assert_true("[![Mojo version](https://mojourney.dev/badge/acme/tomlkit/mojo.svg)](https://mojourney.dev/repos/acme/tomlkit)" in page)
+    assert_true("<p id=used-by class=mute>No census repo depends on it yet.</p>" in _body(_get(r, "/repos/acme/http")))
+    assert_true('"used_by_other_owners":1' in _body(_get(r, "/api/repos/acme/tomlkit")))
 
 
 def test_most_stars() raises:
