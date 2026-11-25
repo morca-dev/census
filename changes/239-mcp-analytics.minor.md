@@ -1,1 +1,0 @@
-- **MCP analytics:** `/mcp` sends PostHog's MCP Analytics events (`$mcp_tool_call`, `$mcp_tools_list`, `$mcp_initialize`) instead of `mcp_request`. (#239)
