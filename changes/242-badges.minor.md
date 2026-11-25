@@ -1,0 +1,1 @@
+- **README badges:** each repo's page has a "used by" and a Mojo version badge to paste into its README, served under `/badge/`. (#242)
