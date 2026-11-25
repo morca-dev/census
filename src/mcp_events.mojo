@@ -1,14 +1,23 @@
 """The MCP endpoint's usage events in PostHog, sent from the server (#229).
 
-Every request to `/mcp` becomes one `mcp_request` event (`McpEvent`,
-`event_json`): the method, for tools/call the tool and its arguments (each
-string cut to `ARG_STRING_MAX` characters, the whole object to
-`ARG_OBJECT_MAX` bytes, `trim_arguments`), the client's name and version,
-the protocol version, how it went (`ok`, `tool_error`, `rpc_error`,
-`rate_limited`), how many results, how long it took and how big the answer
-was. No personal data: `distinct_id` is a hash of the client's IP with a
-random salt that changes every UTC day (`ClientIds`), and the event asks
-PostHog for no person profile, no IP and no GeoIP.
+The events are the ones PostHog's MCP Analytics dashboard reads
+(posthog.com/docs/mcp-analytics/installation/other-languages): a call to one
+of the tools is a `$mcp_tool_call`, tools/list a `$mcp_tools_list` and
+`initialize` a `$mcp_initialize`. Nothing else is sent: not pings,
+notifications, bad messages or calls that name a tool there isn't. Each has
+the server's and the client's name and version, the protocol version, the
+time it took and, for a call, the tool, whether it failed (`ok`,
+`tool_error`, `rpc_error` or `rate_limited`, and an error type) and its
+arguments (each string cut to `ARG_STRING_MAX` characters, the whole object
+to `ARG_OBJECT_MAX` bytes, `trim_arguments`) as a string of our own,
+`arguments`. `$mcp_parameters`, `$mcp_response` and `$mcp_error_message`
+are left out: PostHog asks for a redaction pass before those.
+
+No personal data: `distinct_id` is a hash of the client's IP with a random
+salt that changes every UTC day (`ClientIds`), and the event asks PostHog
+for no person profile, no IP and no GeoIP. `/mcp` has no sessions, so
+`$session_id` is a fresh id for every request (`session_id`), as PostHog
+asks of a stateless server.
 
 Requests never wait on PostHog: `EventQueue.push` adds the event to a
 bounded queue (`QUEUE_MAX`, the oldest dropped when full) and returns, and
@@ -42,6 +51,8 @@ comptime ARG_STRING_MAX = 200
 comptime ARG_OBJECT_MAX = 1024
 """Bytes kept of the arguments object as a whole."""
 comptime CLIENT_FIELD_MAX = 100
+comptime HEADER_MAX = 256
+"""Characters kept of `User-Agent` and `X-Anthropic-Client`."""
 
 
 def js(s: StringSpan) -> String:
@@ -193,20 +204,30 @@ def client_of_agent(user_agent: String) -> Tuple[String, String]:
 struct McpEvent(Copyable, Movable):
     """One `/mcp` request, as PostHog gets it."""
 
+    var name: String
+    """`$mcp_tool_call`, `$mcp_tools_list` or `$mcp_initialize`."""
     var distinct_id: String
     """`ClientIds.id_of` the client's IP: never the IP itself."""
+    var session_id: String
     var at_us: Int64
-    """When, in microseconds since the epoch."""
-    var method: String
+    """When it started, in microseconds since the epoch."""
+    var server_version: String
     var tool: String
     """tools/call's tool, else ""."""
     var arguments: String
     """tools/call's `trim_arguments`, else ""."""
+    var listed: List[String]
+    """tools/list's tools, else none."""
     var client_name: String
     var client_version: String
+    var user_agent: String
+    var vendor_client: String
+    """The `X-Anthropic-Client` header."""
     var protocol_version: String
     var status: String
     """`ok`, `tool_error`, `rpc_error` or `rate_limited`."""
+    var error_type: String
+    """PostHog's label for a failure (`validation`, ...), else ""."""
     var results: Int
     var duration_ms: Int
     var response_bytes: Int
@@ -215,20 +236,41 @@ struct McpEvent(Copyable, Movable):
 def event_json(e: McpEvent) -> String:
     """The event as an item of PostHog's batch."""
     var out = String(
-        '{"event":"mcp_request","distinct_id":', js(e.distinct_id),
+        '{"event":', js(e.name), ',"distinct_id":', js(e.distinct_id),
         ',"timestamp":', js(micros_to_iso(e.at_us)),
-        ',"properties":{"site":"mojourney","method":', js(e.method),
+        ',"properties":{"site":"mojourney","$mcp_source":"posthog_mcp_analytics","$mcp_interface":"mcp"',
+        ',"$session_id":', js(e.session_id), ',"$mcp_server_name":"mojourney","$mcp_server_version":',
+        js(e.server_version),
     )
     if e.tool.byte_length() > 0:
-        out.write(',"tool":', js(e.tool), ',"arguments":', e.arguments if e.arguments.byte_length() > 0 else "{}")
+        out.write(
+            ',"$mcp_tool_name":', js(e.tool), ',"$mcp_resource_name":', js(e.tool),
+            ',"arguments":', js(e.arguments if e.arguments.byte_length() > 0 else String("{}")),
+        )
+    if len(e.listed) > 0:
+        out += ',"$mcp_listed_tool_names":['
+        for i in range(len(e.listed)):
+            out.write("," if i > 0 else "", js(e.listed[i]))
+        out += "]"
+    _optional(out, "$mcp_client_name", e.client_name)
+    _optional(out, "$mcp_client_version", e.client_version)
+    _optional(out, "$mcp_client_user_agent", e.user_agent)
+    _optional(out, "$mcp_vendor_client", e.vendor_client)
+    _optional(out, "$mcp_protocol_version", e.protocol_version)
+    out.write(',"$mcp_is_error":', "true" if e.status != "ok" else "false")
+    _optional(out, "$mcp_error_type", e.error_type)
     out.write(
-        ',"client_name":', js(e.client_name), ',"client_version":', js(e.client_version),
-        ',"protocol_version":', js(e.protocol_version), ',"status":', js(e.status),
-        ',"results":', e.results, ',"duration_ms":', e.duration_ms,
+        ',"$mcp_duration_ms":', e.duration_ms, ',"status":', js(e.status), ',"results":', e.results,
         ',"response_bytes":', e.response_bytes,
         ',"$process_person_profile":false,"$ip":null,"$geoip_disable":true}}',
     )
     return out^
+
+
+def _optional(mut out: String, key: StaticString, value: String):
+    """The property `key`, when there is a value."""
+    if value.byte_length() > 0:
+        out.write(',"', key, '":', js(value))
 
 
 def batch_json(key: String, events: List[String]) -> String:
@@ -253,6 +295,20 @@ def _random_u64() -> UInt64:
     except:
         pass
     return UInt64(perf_counter_ns()) * 0x9E3779B97F4A7C15
+
+
+def session_id(at_us: Int64) -> String:
+    """`ses_` and a UUIDv7 of that time: a new one for every request."""
+    var hi = (UInt64(at_us // 1000) << 16) | 0x7000 | (_random_u64() & 0xFFF)
+    var lo = (_random_u64() & 0x3FFF_FFFF_FFFF_FFFF) | 0x8000_0000_0000_0000
+    comptime HEX = "0123456789abcdef"
+    var out = String("ses_")
+    for k in range(32):
+        if k == 8 or k == 12 or k == 16 or k == 20:
+            out += "-"
+        var w = hi if k < 16 else lo
+        out += HEX[byte = Int((w >> UInt64(60 - 4 * (k % 16))) & 15)]
+    return out^
 
 
 struct ClientIds(Movable):

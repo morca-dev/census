@@ -14,7 +14,7 @@ from console_live import LiveData
 from console_mcp import McpState, Outcome, handle_mcp, tool_names
 from console_routes import console_router
 from jscan import Range, field, text
-from mcp_events import ClientIds, EventQueue, McpEvent, event_json, trim_arguments
+from mcp_events import ClientIds, EventQueue, McpEvent, event_json, session_id, trim_arguments
 from model import Library, Migration, Point, Release, VersionMonth
 from querymodel import QueryModel
 from similar import Neighbor
@@ -347,18 +347,58 @@ def test_event_json() raises:
     assert_equal(id, ids.id_of("203.0.113.7", 20_400))
     assert_true(id != ids.id_of("203.0.113.7", 20_401))
     var e = McpEvent(
-        id, 1_763_800_000_000_000, "tools/call", "get_repo", '{"repo":"acme/x"}', "inspector", "0.17",
-        "2025-06-18", "ok", 1, 12, 345,
+        "$mcp_tool_call", id, "ses_x", 1_763_800_000_000_000, "1.23.0", "get_repo", '{"repo":"acme/x"}',
+        List[String](), "inspector", "0.17", "inspector/0.17 (x)", "", "2025-06-18", "ok", "", 1, 12, 345,
     )
     var j = event_json(e)
-    assert_true(j.startswith('{"event":"mcp_request","distinct_id":"mcp_'), j)
+    assert_true(j.startswith('{"event":"$mcp_tool_call","distinct_id":"mcp_'), j)
     assert_false("203.0.113" in j)
-    assert_true('"site":"mojourney","method":"tools/call","tool":"get_repo","arguments":{"repo":"acme/x"}' in j)
-    assert_true('"status":"ok","results":1,"duration_ms":12,"response_bytes":345' in j)
+    assert_true('"$mcp_source":"posthog_mcp_analytics"' in j, j)
+    assert_true('"$session_id":"ses_x","$mcp_server_name":"mojourney","$mcp_server_version":"1.23.0"' in j, j)
+    assert_true('"$mcp_tool_name":"get_repo","$mcp_resource_name":"get_repo"' in j, j)
+    assert_true('"arguments":"{\\"repo\\":\\"acme/x\\"}"' in j, j)
+    assert_true('"$mcp_client_user_agent":"inspector/0.17 (x)"' in j, j)
+    # A JSON boolean and number, and nothing for what there isn't.
+    assert_true('"$mcp_is_error":false,"$mcp_duration_ms":12,"status":"ok","results":1' in j, j)
+    assert_false("$mcp_vendor_client" in j)
+    assert_false("$mcp_error_type" in j)
     assert_true('"$process_person_profile":false,"$ip":null,"$geoip_disable":true' in j)
+    e.status = "tool_error"
+    e.error_type = "validation"
+    assert_true('"$mcp_is_error":true,"$mcp_error_type":"validation"' in event_json(e))
     # No tool, no arguments.
-    var plain = McpEvent(id, 0, "ping", "", "", "", "", "", "ok", 0, 0, 10)
-    assert_false('"arguments"' in event_json(plain))
+    e.name = "$mcp_tools_list"
+    e.tool = ""
+    e.listed = ["a", "b"]
+    var listed = event_json(e)
+    assert_false('"arguments"' in listed)
+    assert_false("$mcp_tool_name" in listed)
+    assert_true('"$mcp_listed_tool_names":["a","b"]' in listed)
+
+
+def test_session_id() raises:
+    var s = session_id(1_763_800_000_000_000)
+    assert_equal(s.byte_length(), 40)
+    assert_true(s.startswith("ses_"), s)
+    assert_equal(String(s[byte=18:19]), "7")
+    assert_true(s != session_id(1_763_800_000_000_000))
+    var r1 = String(s[byte=4:17])
+    assert_equal(r1, String(session_id(1_763_800_000_000_000)[byte=4:17]))
+
+
+def test_event_names() raises:
+    assert_equal(_outcome(_cache(), _call("overview", "{}")).event, "$mcp_tool_call")
+    assert_equal(_outcome(_cache(), '{"jsonrpc":"2.0","id":1,"method":"tools/list"}').event, "$mcp_tools_list")
+    assert_equal(_outcome(_cache(), '{"jsonrpc":"2.0","id":1,"method":"initialize"}').event, "$mcp_initialize")
+    # Not sent: a tool there isn't, pings, notifications and bad messages.
+    assert_equal(_outcome(_cache(), _call("nope", "{}")).event, "")
+    assert_equal(_outcome(_cache(), '{"jsonrpc":"2.0","id":1,"method":"ping"}').event, "")
+    assert_equal(_outcome(_cache(), '{"jsonrpc":"2.0","method":"initialize"}').event, "")
+    assert_equal(_outcome(_cache(), "{").event, "")
+    var limited = _outcome(_cache(), _call("overview", "{}"), per_minute=0)
+    assert_equal(limited.event, "$mcp_tool_call")
+    assert_equal(limited.error_type, "rate_limited")
+    assert_equal(_outcome(_cache(), _call("get_repo", "{}")).error_type, "validation")
 
 
 def test_trim_arguments() raises:
