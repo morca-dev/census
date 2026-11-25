@@ -455,7 +455,7 @@ def test_registry_auth() raises:
 
 
 def test_badges() raises:
-    # Used by counts the other owners' repos, through a fork too (#241).
+    # Used by counts every dependent, the owner's own and through a fork too.
     var c = _cache()
     c.libs[0].used_by = ["acme/http", "beta/app", "gamma/tool"]
     c.libs[0].used_by_forks = ["gamma/tool"]
@@ -466,11 +466,11 @@ def test_badges() raises:
     assert_equal(used.headers.get("Content-Type"), "image/svg+xml; charset=utf-8")
     assert_equal(used.headers.get("Cache-Control"), BADGE_CACHE)
     assert_true(_body(used).startswith("<svg "))
-    assert_true('aria-label="used by: 2 projects"' in _body(used))
+    assert_true('aria-label="used by: 3 projects"' in _body(used))
     assert_true(BRAND_COLOR in _body(used))
     assert_equal(
         _body(_get(r, "/badge/acme/tomlkit/used-by.json")),
-        '{"schemaVersion":1,"label":"used by","message":"2 projects","color":"b45309","cacheSeconds":3600}',
+        '{"schemaVersion":1,"label":"used by","message":"3 projects","color":"b45309","cacheSeconds":3600}',
     )
     # None yet: grey, and still a badge.
     var none = _body(_get(r, "/badge/acme/http/used-by.svg"))
@@ -480,7 +480,7 @@ def test_badges() raises:
     assert_true('"message":"1.3.0 nightly"' in _body(_get(r, "/badge/acme/http/mojo.json")))
     # An old name and another case find the repo.
     assert_true('"message":"1.3.0 nightly"' in _body(_get(r, "/badge/old-owner/mojo-http/mojo.json")))
-    assert_true("2 projects" in _body(_get(r, "/badge/Acme/TomlKit/used-by.svg")))
+    assert_true("3 projects" in _body(_get(r, "/badge/Acme/TomlKit/used-by.svg")))
     # A repo the census doesn't have: a 200 and an image, kept for less long.
     var missing = _get(r, "/badge/nobody/nothing/used-by.svg")
     assert_equal(missing.status, 200)

@@ -375,8 +375,8 @@ def _repo_links(repos: List[String]) -> String:
 
 def _deps_section(l: Library) -> String:
     """What it depends on and what depends on it. `#used-by`, where its
-    badge links, is always there: with the dependents, how many of them are
-    from other owners (the badge's number), or that there are none yet."""
+    badge links, is always there: with the dependents (the badge's number), how many
+    of them are from other owners, or that there are none yet."""
     var h = String("<h2>Dependencies</h2><div class=prose>")
     if len(l.depends_on) > 0:
         h.write("<p>Depends on ", _repo_links(l.depends_on), ".</p>")
