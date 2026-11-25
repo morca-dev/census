@@ -480,7 +480,7 @@ def test_badges() raises:
     assert_true('"message":"1.3.0 nightly"' in _body(_get(r, "/badge/acme/http/mojo.json")))
     # An old name and another case find the repo.
     assert_true('"message":"1.3.0 nightly"' in _body(_get(r, "/badge/old-owner/mojo-http/mojo.json")))
-    assert_true("2 projects" in _body(_get(r, "/badge/Acme/TomlKit/used-by.svg")))
+    assert_true("3 projects" in _body(_get(r, "/badge/Acme/TomlKit/used-by.svg")))
     # A repo the census doesn't have: a 200 and an image, kept for less long.
     var missing = _get(r, "/badge/nobody/nothing/used-by.svg")
     assert_equal(missing.status, 200)
