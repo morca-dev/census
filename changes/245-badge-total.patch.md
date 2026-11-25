@@ -1,1 +1,0 @@
-- **README badges:** the used-by badge counts every census repo that depends on the library, its owner's own too. (#245)
