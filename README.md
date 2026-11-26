@@ -81,7 +81,11 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   Mojo package, or the pushed commit's files). Mojo repositories go into
   `mojo.repos` (created, first seen, how found, stars, forks, license,
   default branch, description, size, topics); every answer goes into
-  `mojo.checked`, so a repository is asked about once. GH Archive's recent
+  `mojo.checked`, so a repository is asked about once, except that one
+  answered `not mojo` is asked again when GitHub's search below gives it
+  (at most once a week: a repository can start with a few `.mojo` files
+  and become a Mojo one later; if it now is, it goes into `mojo.repos` as
+  a new one does). GH Archive's recent
   hours have no push or create events and no `language` in pull requests,
   so each run also adds GitHub's search for the `language:Mojo`
   repositories created that day (and, within a week of today, pushed

@@ -1,0 +1,1 @@
+- **A repo once found not Mojo is asked again when GitHub's search later says Mojo** (at most once a week), so one that grew into a Mojo project, such as amarbaro/mojo-libs, enters the census; a backfill after deploying finds those not pushed in the last week. (#250)
