@@ -351,29 +351,40 @@ def _commit_touches_mojo(repo: String, sha: String, mut remaining: Int) raises -
     return False
 
 
-def verify(c: Candidate) raises -> Verdict:
-    """Asks GitHub whether `c` is a Mojo repository. The checks go from
-    cheapest to dearest: the repository itself (one API call), its manifests
-    (raw files, which GitHub doesn't count against the API limit), and the
-    pushed commit (a second API call, made only if budget is left)."""
-    var empty = RepoInfo(c.repo, 0, 0, 0, "", "", "", 0, "", False, List[String](), 0)
-    var r = github(String("/repos/", c.repo))
+def repo_verdict(repo: String, status: Int, body: String, remaining: Int) -> Verdict:
+    """The verdict GitHub's `GET /repos/{owner}/{repo}` reply settles on its
+    own (`limited`, `gone`, `fork`, or `mojo` by `language`), or outcome ""
+    with the repository's fields when `verify` has to look further."""
+    var empty = RepoInfo(repo, 0, 0, 0, "", "", "", 0, "", False, List[String](), 0)
     # GitHub answers 403 or 429 when the rate limit is used up: not a verdict
     # on the repository, so the caller stops and tries it again later.
-    if r.status == 403 or r.status == 429:
-        return Verdict("limited", "", empty^, r.remaining)
+    if status == 403 or status == 429:
+        return Verdict("limited", "", empty^, remaining)
     # Any other status, 404 for a deleted repository among them, settles it
     # as `gone`.
-    if r.status != 200:
-        return Verdict("gone", String("HTTP ", r.status), empty^, r.remaining)
-    var info = parse_repo(r.body)
-    var remaining = r.remaining
+    if status != 200:
+        return Verdict("gone", String("HTTP ", status), empty^, remaining)
+    var info = parse_repo(body)
     if info.fork:
         # Forks of modular/mojo are most "Mojo" repositories in the events;
         # they aren't libraries.
         return Verdict("fork", "", info^, remaining)
     if info.language == "Mojo":
         return Verdict("mojo", "language", info^, remaining)
+    return Verdict("", "", info^, remaining)
+
+
+def verify(c: Candidate) raises -> Verdict:
+    """Asks GitHub whether `c` is a Mojo repository. The checks go from
+    cheapest to dearest: the repository itself (one API call), its manifests
+    (raw files, which GitHub doesn't count against the API limit), and the
+    pushed commit (a second API call, made only if budget is left)."""
+    var r = github(String("/repos/", c.repo))
+    var v = repo_verdict(c.repo, r.status, r.body, r.remaining)
+    if v.outcome.byte_length() > 0:
+        return v^
+    var info = v.info.copy()
+    var remaining = v.remaining
     # A repository GitHub doesn't call Mojo may still be a Mojo project: its
     # manifest names a Mojo package.
     for f in ["pixi.toml", "mojoproject.toml"]:
@@ -384,6 +395,102 @@ def verify(c: Candidate) raises -> Verdict:
         if _commit_touches_mojo(info.repo, c.sha, remaining):
             return Verdict("mojo", "push", info^, remaining)
     return Verdict("not mojo", "", info^, remaining)
+
+
+@fieldwise_init
+struct Asked(Copyable, Movable):
+    """The latest thing `mojo.checked` says about a repository."""
+
+    var at: Int64
+    """`checked_at`, microseconds."""
+    var outcome: String
+    """A `Verdict`'s outcome, or `unchecked`: no API budget was left for it."""
+    var candidate: Candidate
+    """The row's signals, first_seen and sha: all a later run needs to check
+    a repository that waited, without its day's events."""
+
+    def pending(self) -> Bool:
+        """Whether it still waits for a check."""
+        return self.outcome == "unchecked"
+
+
+def answer(mut asked: Dict[String, Asked], var a: Asked) raises:
+    """Adds a row of `mojo.checked` to `asked` unless it already has a newer
+    one for the repository. The table is an append-only log of answers (a
+    repository can be `unchecked` on one day and `mojo` on a later one, or
+    `not mojo` and later `mojo`), so the newest `checked_at` wins, whatever
+    order the rows are read in."""
+    var repo = a.candidate.repo
+    if repo in asked and asked[repo].at > a.at:
+        return
+    asked[repo] = a^
+
+
+comptime RECHECK_DAYS = 7
+"""How long a `not mojo` answer that GitHub's search contradicted stands
+before it is asked again (`ask_again`)."""
+
+
+def ask_again(a: Asked, c: Candidate, now: Int64) -> Bool:
+    """Whether a repository already answered about is asked again, as `c`,
+    at `now` (microseconds). `unchecked` always is. `not mojo` is when this
+    run's GitHub search for `language:Mojo` gave it (a repository can start
+    with a few `.mojo` files and become a Mojo one later): at once if that
+    answer was given without the search's word, else once `RECHECK_DAYS`
+    have passed, so a repository the search keeps giving and `verify` keeps
+    turning down costs a check a week, not one a day. `mojo`, `fork` and
+    `gone` stand."""
+    if a.pending():
+        return True
+    if a.outcome != "not mojo" or not c.has("search"):
+        return False
+    return not a.candidate.has("search") or now - a.at >= Int64(RECHECK_DAYS) * 86_400_000_000
+
+
+def to_ask(
+    found: Dict[String, Candidate],
+    known: Dict[String, Bool],
+    asked: Dict[String, Asked],
+    now: Int64,
+) raises -> List[Candidate]:
+    """The candidates mojo_repos checks, strongest signs first: the run's
+    `found` that aren't in mojo.repos (`known`) and that `mojo.checked`
+    (`asked`) has no standing answer for (`ask_again`), then the ones an
+    earlier run had no API budget for, from any day."""
+    var todo = List[Candidate]()
+    for e in found.items():
+        if e.key in known:
+            continue
+        if e.key in asked:
+            ref a = asked[e.key]
+            if not ask_again(a, e.value, now):
+                continue
+            if not a.pending():
+                # Asked again: the census saw it first when it first asked,
+                # and why it did is kept with why it asks now.
+                var c = e.value.copy()
+                for s in a.candidate.signals.split(","):
+                    if s.byte_length() > 0:
+                        c.add(String(s))
+                if a.candidate.first_seen > 0:
+                    c.first_seen = min(c.first_seen, a.candidate.first_seen)
+                todo.append(c^)
+                continue
+        todo.append(e.value.copy())
+    # Their signals and sha were kept in mojo.checked, so they are checked
+    # without reading the old day's candidates again.
+    for e in asked.items():
+        if e.value.pending() and e.key not in found and e.key not in known:
+            todo.append(e.value.candidate.copy())
+    # Strongest signs first (`Candidate.rank`), so that when the budget runs
+    # out it is the weakest guesses (a repository whose name merely contains
+    # "mojo") that wait. An insertion sort: stable, and the list is small.
+    for i in range(1, len(todo)):
+        var j = i
+        while j > 0 and todo[j - 1].rank() > todo[j].rank():
+            todo.swap_elements(j - 1, j)
+            j -= 1
+    return todo^
 
 
 comptime SEARCH_PAGES = 10

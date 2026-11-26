@@ -6,6 +6,8 @@ reads the day's rows of `gharchive.candidates` (which gharchive's hour tasks
 wrote with `detect.scan_event` while they parsed the events), asks
 GitHub about the ones it hasn't asked about before (`detect.verify`), and
 appends the Mojo ones to `mojo.repos` and every answer to `mojo.checked`.
+A repository once answered `not mojo` is asked again when GitHub's search
+(below) later gives it as a Mojo one, at most once a week.
 A repository already in mojo.repos, read again just before the append, is
 never appended again, nor is one GitHub gives the id of a row of it
 (`repo_id`): a renamed or transferred repository's events come under its
@@ -37,7 +39,7 @@ from morca.tables import BatchBuilder, append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import col, i64_at, str_at
-from detect import Candidate, RepoInfo, Verdict, note, search_candidates, verify
+from detect import Asked, Candidate, RepoInfo, Verdict, answer, note, search_candidates, to_ask, verify
 from hourindex import candidates_from
 from days import days_of
 from jscan import days_from_civil
@@ -88,23 +90,9 @@ def _names(mut ctx: Ctx, known: Dict[String, Bool]) raises -> Names:
     return names_from(keys, rows)
 
 
-@fieldwise_init
-struct _Asked(Copyable, Movable):
-    """The latest thing `mojo.checked` says about a repository."""
-
-    var at: Int64
-    var pending: Bool
-    """The latest answer is `unchecked`: no API budget was left for it."""
-    var candidate: Candidate
-
-
-def _asked(mut ctx: Ctx) raises -> Dict[String, _Asked]:
-    """The latest row of mojo.checked for each repository. The table is an
-    append-only log of answers (a repository can be `unchecked` on one day and
-    `mojo` on a later one), so the newest `checked_at` wins. The row keeps
-    the candidate's signals, first_seen and sha, which is all a later run
-    needs to check a repository that waited, without its day's events."""
-    var out = Dict[String, _Asked]()
+def _asked(mut ctx: Ctx) raises -> Dict[String, Asked]:
+    """The latest row of mojo.checked for each repository (`detect.answer`)."""
+    var out = Dict[String, Asked]()
     var t = table(ctx, CHECKED)
     if not t.metadata.has_current_snapshot:
         return out^
@@ -116,18 +104,17 @@ def _asked(mut ctx: Ctx) raises -> Dict[String, _Asked]:
         var c_first = col(b, "first_seen")
         var c_sha = col(b, "sha")
         for r in range(b.num_rows):
-            var repo = str_at(b.column(c_repo), r)
-            var at = i64_at(b.column(c_at), r)
-            if repo in out and out[repo].at > at:
-                continue
-            out[repo] = _Asked(
-                at,
-                str_at(b.column(c_out), r) == "unchecked",
-                Candidate(
-                    repo,
-                    str_at(b.column(c_sig), r),
-                    i64_at(b.column(c_first), r),
-                    str_at(b.column(c_sha), r),
+            answer(
+                out,
+                Asked(
+                    i64_at(b.column(c_at), r),
+                    str_at(b.column(c_out), r),
+                    Candidate(
+                        str_at(b.column(c_repo), r),
+                        str_at(b.column(c_sig), r),
+                        i64_at(b.column(c_first), r),
+                        str_at(b.column(c_sha), r),
+                    ),
                 ),
             )
     return out^
@@ -224,7 +211,8 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     added.
 
     Rerunning a day, or running overlapping days, adds nothing twice: a
-    repository already in `mojo.repos`, or already answered, is skipped."""
+    repository already in `mojo.repos`, or already answered, is skipped
+    (but for `detect.ask_again`)."""
     var found = _day_candidates(ctx, d)
     ctx.log(String(String(d), ": ", len(found), " candidates"))
     # GH Archive no longer has the events that named most Mojo repositories
@@ -244,9 +232,14 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     ctx.log(String("GitHub search: ", len(searched[0]), " Mojo repositories, ", from_search, " not among the events' candidates"))
 
     # Leave out what an earlier day already settled: a repository already in
-    # mojo.repos, or one GitHub already answered about (`mojo`, `not mojo`,
-    # `fork` or `gone`, so each repository is asked about once, ever). Only an
-    # `unchecked` answer, which means no budget was left, is asked again.
+    # mojo.repos, or one GitHub already answered about (`mojo`, `fork` or
+    # `gone`), each asked about once. `unchecked`, which means no budget was
+    # left, is asked again, and so is `not mojo` when this run's search for
+    # `language:Mojo` gives the repository, at most once a week
+    # (`detect.ask_again`): a repository can start with a few `.mojo` files
+    # and become a Mojo one later. Its new answer is a newer row of
+    # mojo.checked, and if it is `mojo` the repository goes into mojo.repos
+    # as a new one does.
     var repos_t = ensure_table(ctx, REPOS, repos_schema())
     var checked_t = ensure_table(ctx, CHECKED, checked_schema())
     var known = _known(ctx, REPOS)
@@ -255,27 +248,8 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     # mojo.repos already.
     var names = _names(ctx, known)
     var asked = _asked(ctx)
-    var todo = List[Candidate]()
-    for e in found.items():
-        if e.key in known:
-            continue
-        if e.key in asked and not asked[e.key].pending:
-            continue
-        todo.append(e.value.copy())
-    # Candidates an earlier run had no API budget for, from any day. Their
-    # signals and sha were kept in mojo.checked, so they are checked without
-    # reading the old day's candidates again.
-    for e in asked.items():
-        if e.value.pending and e.key not in found and e.key not in known:
-            todo.append(e.value.candidate.copy())
-    # Strongest signs first (`Candidate.rank`), so that when the budget runs
-    # out it is the weakest guesses (a repository whose name merely contains
-    # "mojo") that wait. An insertion sort: stable, and the list is small.
-    for i in range(1, len(todo)):
-        var j = i
-        while j > 0 and todo[j - 1].rank() > todo[j].rank():
-            todo.swap_elements(j - 1, j)
-            j -= 1
+    var checked_now = _now_micros()
+    var todo = to_ask(found, known, asked, checked_now)
 
     # Without a token GitHub allows 60 requests an hour and a check can take
     # more than one (the repository, then a pushed commit), so 25 candidates
@@ -289,7 +263,6 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
     var k_how = kb.col("how")
     var k_first = kb.col("first_seen")
     var k_sha = kb.col("sha")
-    var checked_now = _now_micros()
     var asked_n = 0
     var found_mojo = List[_Found]()
     var added_names = Dict[String, Bool]()
@@ -340,7 +313,7 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
         # A candidate that was already waiting and still is gets no second
         # `unchecked` row, so the log doesn't grow by a row per run per
         # waiting candidate.
-        if outcome == "unchecked" and c.repo in asked and asked[c.repo].pending:
+        if outcome == "unchecked" and c.repo in asked and asked[c.repo].pending():
             continue  # already waiting
         kb.add_str(k_repo, c.repo)
         kb.add_int(k_at, checked_now)

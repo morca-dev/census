@@ -109,7 +109,9 @@ comptime CHECKED_SCHEMA = (
     '{"id":6,"name":"first_seen","required":false,"type":"timestamptz"},'
     '{"id":7,"name":"sha","required":false,"type":"string"}]}'
 )
-"""Every candidate mojo_repos asked GitHub about, so it asks once."""
+"""Every candidate mojo_repos asked GitHub about, so it asks once (a
+`not mojo` that GitHub's search contradicts is asked again: the newest row
+wins, `detect.answer`)."""
 
 comptime REPO_STATS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
