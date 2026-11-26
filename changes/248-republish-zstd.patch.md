@@ -1,0 +1,1 @@
+- **Used by:** a repo that depends on magmalake/zstd.mojo counts as a user of amarbaro/mojo-libs, whose zstd codec it vendors. (#248)

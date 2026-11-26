@@ -168,7 +168,7 @@ comptime HOW_PIPELINES = (
     " republish that isn't a GitHub fork counts the same way when the census's"
     " own short list names it (<code>republishes()</code> in"
     " <code>src/deps.mojo</code>: magmalake/flare_mlake of ehsanmok/flare,"
-    " json_mlake of ehsanmok/json, mozz_mlake of ehsanmok/mozz), an entry"
+    " json_mlake of ehsanmok/json, mozz_mlake of ehsanmok/mozz, zstd.mojo of amarbaro/mojo-libs), an entry"
     " added only when the republish's description or README says what it"
     " republishes.</li></ul>"
     "<p>Clones, in mojo_history and mojo_versions, have a time limit, retries"
