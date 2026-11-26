@@ -31,6 +31,8 @@ def republishes() -> Dict[String, String]:
     out["magmalake/flare_mlake"] = "ehsanmok/flare"
     out["magmalake/json_mlake"] = "ehsanmok/json"
     out["magmalake/mozz_mlake"] = "ehsanmok/mozz"
+    # Vendors the codec of libs/zstd rather than packaging the repository.
+    out["magmalake/zstd.mojo"] = "amarbaro/mojo-libs"
     return out^
 
 comptime DEPENDS = "depends"

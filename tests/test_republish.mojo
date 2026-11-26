@@ -114,7 +114,8 @@ def test_table() raises:
     var t = republishes()
     assert_equal(t["magmalake/flare_mlake"], "ehsanmok/flare")
     assert_equal(t["magmalake/json_mlake"], "ehsanmok/json")
-    assert_equal(len(t), 3)
+    assert_equal(t["magmalake/zstd.mojo"], "amarbaro/mojo-libs")
+    assert_equal(len(t), 4)
 
 
 def main() raises:
