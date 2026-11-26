@@ -3,6 +3,18 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.25.0 - 2026-11-26
+
+- **Used by:** a repo that depends on magmalake/zstd.mojo counts as a user of amarbaro/mojo-libs, whose zstd codec it vendors. (#248)
+
+- **Mojo 1.3.0.dev2026112605:** the census and every tin it uses move from 1.3.0.dev2026112505 to the first nightly with the stable `guard` statement, and to zstd-mojo with the faster 0.4.0 codec. (#249)
+
+- **A repo once found not Mojo is asked again when GitHub's search later says Mojo** (at most once a week), so one that grew into a Mojo project, such as amarbaro/mojo-libs, enters the census; a backfill after deploying finds those not pushed in the last week. (#250)
+
+**After deploying** (deploy.sh shows these and runs the commands):
+
+- Run `morca backfill --rerun --allow-append --as-fill mojo_repos 2023-01-01..2026-11-26`.
+
 ## 1.24.0 - 2026-11-25
 
 - **Mojo 1.3.0.dev2026112505:** the census and every tin it uses move from 1.3.0.dev2026111805, which miscompiled some `while True:` loops. Parquet files are now written and read by a pure-Mojo zstd, which is slower than libzstd (about 1.5x to 2.5x on the codec alone). (#243)
