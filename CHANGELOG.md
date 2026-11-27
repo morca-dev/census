@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.26.0 - 2026-11-27
+
+- **Repos already in the census follow their head:** a new hourly pipeline, `mojo_refresh`, reads again up to 60 repos a run whose default branch moved since their last read (oldest first, backing off after failures) and replaces their commits, migrations, tags, contributors, Mojo version and dependencies, so no backfill by hand is needed; deploying is enough, and the backlog drains in about a day and a half. (#253)
+
 ## 1.25.0 - 2026-11-26
 
 - **Used by:** a repo that depends on magmalake/zstd.mojo counts as a user of amarbaro/mojo-libs, whose zstd codec it vendors. (#248)
