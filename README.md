@@ -245,8 +245,10 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   stars per month from `mojo.activity`, releases and tags), each also as
   JSON under `/api/` (`/api/overview`, `/api/repos`, `/api/repos?q=`, ...),
   an MCP server for agents at `POST /mcp` (`src/console_mcp.mojo`: Streamable
-  HTTP, stateless, read-only; tools `search_repos`, `list_repos`, `get_repo`,
-  `similar_repos`, `version_adoption` and `overview`; at most
+  HTTP, stateless; read-only tools `search_repos`, `list_repos`, `get_repo`,
+  `similar_repos`, `version_adoption` and `overview`, and `get_more_tools`,
+  PostHog's tool for an agent to report a capability the server lacks, which
+  reads nothing and only records the report in PostHog; at most
   `MCP_CALLS_PER_MINUTE` tool calls a minute per client, default 60),
   and `/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and `/robots.txt` for
   crawlers and language models, all written from `src/console_pages.mojo`'s
@@ -623,8 +625,9 @@ the page's own origin, with memory-only persistence (no cookies, no
 every event (morca's UI sends `site: "morca"`), so one PostHog project can hold
 both sites. If the key is unset or not a `phc_` key, the snippet is left out
 (`src/analytics.mojo`). With the same key, the console also sends PostHog the
-MCP Analytics events of `/mcp` (`$mcp_tool_call`, `$mcp_tools_list` and
-`$mcp_initialize`) from the server, batched every 10 s by a thread of its own, with a daily-salted hash of the client's IP as
+MCP Analytics events of `/mcp` (`$mcp_tool_call`, `$mcp_tools_list`,
+`$mcp_initialize`, and `$mcp_missing_capability` for a `get_more_tools`
+report, its text cut to 2,048 characters, for the "Missing capabilities" page) from the server, batched every 10 s by a thread of its own, with a daily-salted hash of the client's IP as
 its id and no IP or person profile (`src/mcp_events.mojo`). The console doesn't serve `/ph`: on mojourney.dev
 the `mojourney-ph` Cloudflare Worker in magmalake/magmalake.org does
 (`npx wrangler deploy -c worker/mojourney-ph/wrangler.jsonc`).

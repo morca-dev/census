@@ -2,9 +2,11 @@
 
 The events are the ones PostHog's MCP Analytics dashboard reads
 (posthog.com/docs/mcp-analytics/installation/other-languages): a call to one
-of the tools is a `$mcp_tool_call`, tools/list a `$mcp_tools_list` and
-`initialize` a `$mcp_initialize`. Nothing else is sent: not pings,
-notifications, bad messages or calls that name a tool there isn't. Each has
+of the tools is a `$mcp_tool_call`, tools/list a `$mcp_tools_list`,
+`initialize` a `$mcp_initialize`, and a report through `get_more_tools` a
+`$mcp_missing_capability` (not a tool call). Nothing else is sent: not pings,
+notifications, bad messages, calls that name a tool there isn't, or a
+`get_more_tools` call that was refused (no `context`, or over the limit). Each has
 the server's and the client's name and version, the protocol version, the
 time it took and, for a call, the tool, whether it failed (`ok`,
 `tool_error`, `rpc_error` or `rate_limited`, and an error type) and its
@@ -12,6 +14,14 @@ arguments (each string cut to `ARG_STRING_MAX` characters, the whole object
 to `ARG_OBJECT_MAX` bytes, `trim_arguments`) as a string of our own,
 `arguments`. `$mcp_parameters`, `$mcp_response` and `$mcp_error_message`
 are left out: PostHog asks for a redaction pass before those.
+
+A `$mcp_missing_capability` is what PostHog's SDK sends for one
+(`captureMissingCapability` in posthog-js `packages/mcp`): the tool as
+`$mcp_resource_name` only (no `$mcp_tool_name`, so it isn't counted with the
+tools), and the agent's `context`, its only argument, as `$mcp_intent`, cut
+to `INTENT_MAX` characters as the SDK cuts it, with `$mcp_intent_source`
+`context_parameter`. It has no time, error or `arguments`: the SDK sends none
+of the first two, and the text is already in `$mcp_intent`.
 
 No personal data: `distinct_id` is a hash of the client's IP with a random
 salt that changes every UTC day (`ClientIds`), and the event asks PostHog
@@ -53,6 +63,10 @@ comptime ARG_OBJECT_MAX = 1024
 comptime CLIENT_FIELD_MAX = 100
 comptime HEADER_MAX = 256
 """Characters kept of `User-Agent` and `X-Anthropic-Client`."""
+comptime INTENT_MAX = 2048
+"""Characters kept of a `get_more_tools` report (`$mcp_intent`): the limit
+PostHog's SDK puts on `$mcp_intent` (`MAX_USER_INTENT_LENGTH`)."""
+comptime MISSING_CAPABILITY = "$mcp_missing_capability"
 
 
 def js(s: StringSpan) -> String:
@@ -205,7 +219,8 @@ struct McpEvent(Copyable, Movable):
     """One `/mcp` request, as PostHog gets it."""
 
     var name: String
-    """`$mcp_tool_call`, `$mcp_tools_list` or `$mcp_initialize`."""
+    """`$mcp_tool_call`, `$mcp_tools_list`, `$mcp_initialize` or
+    `$mcp_missing_capability`."""
     var distinct_id: String
     """`ClientIds.id_of` the client's IP: never the IP itself."""
     var session_id: String
@@ -231,6 +246,8 @@ struct McpEvent(Copyable, Movable):
     var results: Int
     var duration_ms: Int
     var response_bytes: Int
+    var intent: String
+    """A `get_more_tools` report's `context`, cut to `INTENT_MAX`, else ""."""
 
 
 def event_json(e: McpEvent) -> String:
@@ -242,7 +259,10 @@ def event_json(e: McpEvent) -> String:
         ',"$session_id":', js(e.session_id), ',"$mcp_server_name":"mojourney","$mcp_server_version":',
         js(e.server_version),
     )
-    if e.tool.byte_length() > 0:
+    var missing = e.name == MISSING_CAPABILITY
+    if missing:
+        out.write(',"$mcp_resource_name":', js(e.tool))
+    elif e.tool.byte_length() > 0:
         out.write(
             ',"$mcp_tool_name":', js(e.tool), ',"$mcp_resource_name":', js(e.tool),
             ',"arguments":', js(e.arguments if e.arguments.byte_length() > 0 else String("{}")),
@@ -257,6 +277,12 @@ def event_json(e: McpEvent) -> String:
     _optional(out, "$mcp_client_user_agent", e.user_agent)
     _optional(out, "$mcp_vendor_client", e.vendor_client)
     _optional(out, "$mcp_protocol_version", e.protocol_version)
+    if missing:
+        out.write(
+            ',"$mcp_intent":', js(e.intent), ',"$mcp_intent_source":"context_parameter"',
+            ',"$process_person_profile":false,"$ip":null,"$geoip_disable":true}}',
+        )
+        return out^
     out.write(',"$mcp_is_error":', "true" if e.status != "ok" else "false")
     _optional(out, "$mcp_error_type", e.error_type)
     out.write(

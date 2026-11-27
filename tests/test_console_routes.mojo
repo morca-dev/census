@@ -441,8 +441,9 @@ def test_ai_page() raises:
     var html = _body(resp)
     assert_true("claude mcp add --transport http mojourney https://mojourney.dev/mcp" in html)
     assert_true("dev.mojourney/census" in html)
-    for t in ["search_repos", "list_repos", "get_repo", "similar_repos", "version_adoption", "overview"]:
+    for t in ["search_repos", "list_repos", "get_repo", "similar_repos", "version_adoption", "overview", "get_more_tools"]:
         assert_true(String("<code>", t, "</code>") in html, t)
+    assert_true("get_more_tools" in _body(_get(r, "/llms.txt")))
     assert_true("<a href='/ai'>Use with AI</a>" in _body(_get(r, "/")))
     assert_true("https://mojourney.dev/ai" in _body(_get(r, "/llms.txt")))
 

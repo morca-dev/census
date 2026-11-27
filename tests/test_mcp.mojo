@@ -1,7 +1,7 @@
 """The MCP server at POST /mcp (#229): its JSON-RPC handling (a bad body,
 an unknown method, an unknown tool, missing arguments, notifications), each
-tool against a test cache through the console's router, the tools/call
-limit, and its PostHog events (built and queued only; nothing is sent)."""
+tool against a test cache through the console's router, `get_more_tools`,
+the tools/call limit, and its PostHog events (built and queued only; nothing is sent)."""
 
 from std.memory.alloc import unsafe_alloc
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
@@ -11,10 +11,10 @@ from flare.http import Request, Response, Router
 from checks import CheckRun
 from console_cache import Cache, RepoData
 from console_live import LiveData
-from console_mcp import McpState, Outcome, handle_mcp, tool_names
+from console_mcp import MORE_TOOLS_REPLY, McpState, Outcome, handle_mcp, listed_tool_names, tool_names
 from console_routes import console_router
 from jscan import Range, field, text
-from mcp_events import ClientIds, EventQueue, McpEvent, event_json, session_id, trim_arguments
+from mcp_events import ClientIds, EventQueue, INTENT_MAX, McpEvent, event_json, session_id, trim_arguments
 from model import Library, Migration, Point, Release, VersionMonth
 from querymodel import QueryModel
 from similar import Neighbor
@@ -197,8 +197,21 @@ def test_tools_list() raises:
     var s = _body(_post(r, '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'))
     for name in tool_names():
         assert_true(String('"name":"', name, '"') in s, name)
-    assert_equal(s.count('"inputSchema":{"type":"object"'), 6)
+    assert_equal(s.count('"inputSchema":{"type":"object"'), 7)
     assert_equal(s.count("GH Archive"), 6)
+    # get_more_tools last, as PostHog's SDKs define it.
+    assert_equal(listed_tool_names()[len(listed_tool_names()) - 1], "get_more_tools")
+    assert_true(
+        s.endswith(
+            '{"name":"get_more_tools","description":"Report that the user\'s request needs a capability this server'
+            " does not have. Records the report for the server's developers; it does not return or add tools.\""
+            ',"inputSchema":{"type":"object","properties":{"context":{"type":"string","description":"A description'
+            ' of your goal and what kind of tool would help accomplish it."}},"required":["context"]}'
+            ',"annotations":{"readOnlyHint":false,"destructiveHint":false,"idempotentHint":false,'
+            '"openWorldHint":false}}]}}'
+        ),
+        s,
+    )
 
 
 def test_unknown_tool_and_missing_arguments() raises:
@@ -297,6 +310,80 @@ def test_overview() raises:
     assert_true('"url":"https://mojourney.dev/"' in s)
 
 
+def test_get_more_tools() raises:
+    var r = _router(_state())
+    var s = _body(_post(r, _call("get_more_tools", '{"context":"A tool to compare two repos\' benchmarks"}')))
+    assert_equal(
+        s,
+        String(
+            '{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"', MORE_TOOLS_REPLY,
+            '"}],"isError":false}}',
+        ),
+    )
+    # A report needs `context`, a string with something in it.
+    for args in ["{}", '{"context":"   "}', '{"context":null}']:
+        var bad = _body(_post(r, _call("get_more_tools", args)))
+        assert_true('"isError":true' in bad, bad)
+        assert_true("Missing argument `context`" in bad, bad)
+    assert_true("`context` must be a string" in _body(_post(r, _call("get_more_tools", '{"context":7}'))))
+    assert_equal(_code(_post(r, _call("get_more_tools", "[]"))), "-32602")
+    # It reads nothing, so it answers while the census warms up.
+    var cold = _cache()
+    cold.ready = False
+    var oc = _outcome(cold^, _call("get_more_tools", '{"context":"x"}'))
+    assert_equal(oc.status, "ok")
+    assert_equal(oc.event, "$mcp_missing_capability")
+
+
+def test_get_more_tools_events() raises:
+    var ok = _outcome(_cache(), _call("get_more_tools", '{"context":"  Need a tool that lists GPU kernels  "}'))
+    assert_equal(ok.event, "$mcp_missing_capability")
+    assert_equal(ok.tool, "get_more_tools")
+    assert_equal(ok.intent, "Need a tool that lists GPU kernels")
+    assert_equal(ok.arguments, "")
+    # A refused report is no event, a tool call least of all.
+    assert_equal(_outcome(_cache(), _call("get_more_tools", "{}")).event, "")
+    assert_equal(_outcome(_cache(), _call("get_more_tools", '{"context":""}')).event, "")
+    assert_equal(_outcome(_cache(), _call("get_more_tools", '{"context":"x"}'), per_minute=0).event, "")
+    # A long report is cut, not refused.
+    var long = String()
+    for _ in range(3000):
+        long += "é"
+    var cut = _outcome(_cache(), _call("get_more_tools", String('{"context":"', long, '"}')))
+    assert_equal(cut.event, "$mcp_missing_capability")
+    assert_equal(cut.intent.count_codepoints(), INTENT_MAX)
+    # Through the router, with a key: one event queued (none sent), the one PostHog's SDK sends.
+    var state = _state(key="phc_test")
+    var r = _router(state)
+    _ = _post(r, _call("get_more_tools", '{"context":"Need a tool for \\"x\\"\\nand y"}'))
+    ref st = Pointer[McpState, MutUntrackedOrigin](unsafe_from_address=state)[]
+    var got = st.events.take()
+    assert_equal(len(got), 1)
+    var j = got[0]
+    assert_true(j.startswith('{"event":"$mcp_missing_capability","distinct_id":"mcp_'), j)
+    assert_true('"$mcp_source":"posthog_mcp_analytics","$mcp_interface":"mcp","$session_id":"ses_' in j, j)
+    assert_true('"$mcp_server_name":"mojourney"' in j, j)
+    assert_true('"$mcp_resource_name":"get_more_tools"' in j, j)
+    assert_true('"$mcp_client_name":"test-agent","$mcp_client_version":"1.2"' in j, j)
+    assert_true('"$mcp_client_user_agent":"test-agent/1.2 (x)"' in j, j)
+    assert_true(
+        '"$mcp_intent":"Need a tool for \\"x\\"\\nand y","$mcp_intent_source":"context_parameter"' in j, j
+    )
+    assert_true(j.endswith('"$process_person_profile":false,"$ip":null,"$geoip_disable":true}}'), j)
+    for absent in ["$mcp_tool_name", "$mcp_is_error", "$mcp_duration_ms", "$mcp_parameters", '"arguments"', '"status"']:
+        assert_false(String(absent) in j, absent)
+    # tools/list lists it among the tools.
+    _ = _post(r, '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+    assert_true('"overview","get_more_tools"]' in st.events.take()[0])
+    # Without a key it answers the same and nothing is kept.
+    var off = _state()
+    var r_off = _router(off)
+    assert_true(MORE_TOOLS_REPLY in _body(_post(r_off, _call("get_more_tools", '{"context":"x"}'))))
+    ref st_off = Pointer[McpState, MutUntrackedOrigin](unsafe_from_address=off)[]
+    assert_false(st_off.events.on())
+    assert_equal(st_off.events.count(), 0)
+
+
 def test_tools_call_limit() raises:
     var r = _router(_state(2))
     assert_equal(_post(r, _call("overview", "{}")).status, 200)
@@ -348,7 +435,7 @@ def test_event_json() raises:
     assert_true(id != ids.id_of("203.0.113.7", 20_401))
     var e = McpEvent(
         "$mcp_tool_call", id, "ses_x", 1_763_800_000_000_000, "1.23.0", "get_repo", '{"repo":"acme/x"}',
-        List[String](), "inspector", "0.17", "inspector/0.17 (x)", "", "2025-06-18", "ok", "", 1, 12, 345,
+        List[String](), "inspector", "0.17", "inspector/0.17 (x)", "", "2025-06-18", "ok", "", 1, 12, 345, "",
     )
     var j = event_json(e)
     assert_true(j.startswith('{"event":"$mcp_tool_call","distinct_id":"mcp_'), j)
@@ -374,6 +461,7 @@ def test_event_json() raises:
     assert_false('"arguments"' in listed)
     assert_false("$mcp_tool_name" in listed)
     assert_true('"$mcp_listed_tool_names":["a","b"]' in listed)
+    assert_false("$mcp_intent" in listed)
 
 
 def test_session_id() raises:

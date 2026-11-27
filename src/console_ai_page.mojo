@@ -29,8 +29,8 @@ def ai_page(req: Request) raises -> Response:
         "<div class=prose><h1>Use with AI</h1>",
         "<p class=lead>Mojourney is also a remote MCP server, so an agent can look up Mojo",
         " repos, versions and growth while it works: which libraries exist before it writes one,",
-        " which Mojo version they need, and what is similar. It is read-only, needs no sign-in and",
-        " answers from the same data as these pages.</p>",
+        " which Mojo version they need, and what is similar. Its tools only read, it needs no sign-in",
+        " and it answers from the same data as these pages.</p>",
         _cmd(MCP_URL),
         "<h2>Add it</h2>",
         "<p><b>Claude Code</b></p>",
@@ -51,6 +51,11 @@ def ai_page(req: Request) raises -> Response:
         _tool("similar_repos", "the repos most like one repo."),
         _tool("version_adoption", "how many repos are on each Mojo version, month by month."),
         _tool("overview", "the census in numbers: repos, commits and lines of Mojo, and what is rising."),
+        _tool(
+            "get_more_tools",
+            "for when none of these can do what you asked: the agent says what it needed, and we keep that as a"
+            " request for a new tool. It reads nothing from the census and returns no tools.",
+        ),
         "</ul>",
         "<h2>Try asking</h2><ul>",
         "<li>Is there a Mojo library for TOML, and which Mojo version does it need?</li>",
@@ -64,7 +69,8 @@ def ai_page(req: Request) raises -> Response:
         "<h2>Limits and what is logged</h2>",
         "<p>Up to 60 tool calls a minute from one client. Each connection and tool call is",
         " counted with its client's name, version and user agent and the tool's arguments, cut",
-        " short; no IP address is kept.</p>",
+        " short; no IP address is kept. A <code>get_more_tools</code> report is kept with the text the agent",
+        " wrote, up to 2,048 characters, so it may hold some of what you asked.</p>",
         "</div>",
     )
     return _page("Use with AI", h^, "ai", description=page_line("/ai"))
