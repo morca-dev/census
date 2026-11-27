@@ -1,7 +1,8 @@
 """Clones each newly found Mojo repository and records its commits, tooling,
 packaging and Mojo version changes, tags, and contributors by month (commit
 authors and co-authors as hashed emails, bots left out); repositories it has
-read before are skipped (mojo_retool reads them again).
+read before are skipped (mojo_refresh reads them again, hourly, once their
+head moves; mojo_retool all of them, by hand).
 
 Keyed by the `repo` column of `mojo.repos` (`owner/name`), 50 repositories
 a run, and a sensor, so each snapshot mojo_repos commits starts runs for the

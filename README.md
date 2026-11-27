@@ -110,7 +110,9 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   for its tags only, so `morca backfill --rerun mojo_history @all` fills
   `mojo.tags` for repositories read before tags were.
 - **`pipelines/mojo_retool.mojo`**: a one-off that re-reads the histories
-  mojo_history already read and replaces their rows (used when `tooling`
+  mojo_history already read and replaces their rows (mojo_refresh does it
+  on its own for the repositories whose head moved; this one reads every
+  repository, for when the reader changes: used when `tooling`
   learned `bazel`, a root `MODULE.bazel`/`WORKSPACE`/`BUILD.bazel`, which
   outranks pixi, and again for the Python build tools and `packaging`:
   `morca backfill --rerun mojo_retool @all`).
@@ -209,6 +211,28 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   ones go to `mojo.live_commits` with the time the poll saw them, the heads
   to `mojo.live_heads`. The console's `/live` page reads the last two days
   of it every minute.
+- **`pipelines/mojo_refresh.mojo`**: hourly partitions (morca `Hourly`),
+  one run an hour at :30 that keeps the repositories already in the lake up
+  to date, with no backfill by hand. A repository is due when its head in
+  `mojo.live_heads` isn't the head it was last read for: its row of
+  `mojo.refreshed`, or for one without (read only by mojo_history,
+  mojo_retool or mojo_versions) the newest commit in `mojo.commits` and the
+  `head_sha` of `mojo.repo_versions`. A run reads up to 60 due ones
+  (`MOJO_REFRESH_MAX_REPOS`), longest stale first, each with mojo_history's
+  `read_history` and mojo_versions' `read_head_version`, and replaces their
+  rows in `mojo.commits`, `mojo.migrations`, `mojo.tags`,
+  `mojo.contributors`, `mojo.repo_versions` and `mojo.repo_deps` the way
+  mojo_retool and mojo_versions do (`src/rewrite.mojo`: each table rewritten
+  in one `overwrite`, so no row is duplicated). Every try is a row of
+  `mojo.refreshed` (head, time, `ok` or `failed`, failures in a row, the
+  error). A repository rests 6 hours after a good read (24 for one over 1
+  GB, `MOJO_REFRESH_BIG_KB`, like modular/modular) and after a failure 6
+  hours, doubling up to a week, so one that can't be read isn't tried every
+  run; one mojo_history hasn't read is left to it, and `MOJO_HISTORY_MAX_KB`
+  skips the same repositories. It shares the `mojo_repo_rows` concurrency
+  key (morca.toml) with mojo_history, mojo_retool and mojo_versions, so the
+  writers of these tables take turns. `src/refresh.mojo` has the selection;
+  `tests/test_refresh.mojo` tests it.
 - **`bin/console.mojo`**: an overview (`/`: repos, commits and lines of
   Mojo with their change over 30 days, repos per Mojo version family,
   monthly curves from `mojo.commits`, adoption of the newest version,
@@ -439,7 +463,7 @@ comment. `Dockerfile.morca` puts it in the image at `/opt/morca/morca.toml`
 (`MORCA_CONFIG`), next to the pipelines (`MORCA_PIPELINES_DIR`), so on the
 server registering is `docker exec scheduler morca register` (morca after
 0.10.0). To change a setting: edit `morca.toml`, merge, deploy the new image,
-register again. `mojo_retool` has no schedule and runs only by hand, but it is in the file too, so registering keeps it available for a release's upgrade steps (`upgrade.toml`).
+register again. `mojo_retool` has no schedule and runs only by hand, but it is in the file too, so registering keeps it available for a release's upgrade steps (`upgrade.toml`). `mojo_refresh` is in it with the others: registering it is all it needs, and from then on it reads, an hour at a time, every repository whose head moved, the backlog first.
 
 ### The dev stack
 

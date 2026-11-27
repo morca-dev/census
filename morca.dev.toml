@@ -53,6 +53,8 @@ memory_gb = "2"
 # On the server, not the bgent pool (morca.toml's placement), two dista
 # workers each like gharchive.
 env = { DISTA_WORKER_SLOTS = "2" }
+# Takes turns with the other writers of its tables (see mojo_refresh below).
+concurrency = { key = "mojo_repo_rows", limit = 1 }
 
 [pipelines.mojo_retool]
 # Run by hand after a release that changes what the history reader records
@@ -60,11 +62,15 @@ env = { DISTA_WORKER_SLOTS = "2" }
 # repository's history again, as mojo_history does, so the same limits.
 memory_gb = "auto..4"
 env = { DISTA_WORKER_SLOTS = "2" }
+# Takes turns with the other writers of its tables (see mojo_refresh below).
+concurrency = { key = "mojo_repo_rows", limit = 1 }
 
 [pipelines.mojo_versions]
 # Learned (morca #269), at most 4 GB.
 memory_gb = "auto..4"
 env = { DISTA_WORKER_SLOTS = "2" }
+# Takes turns with the other writers of its tables (see mojo_refresh below).
+concurrency = { key = "mojo_repo_rows", limit = 1 }
 
 [pipelines.mojo_activity]
 # Learned (morca #269), at most 4 GB.
@@ -92,6 +98,29 @@ secrets = { GITHUB_TOKEN = "orca/github-token" }
 # One mojo_live run at a time across the cluster, also across a deploy's
 # handover (morca#503; needs HANDOVER_WAIT_SECONDS in hetzner.env).
 concurrency = { key = "mojo_live", limit = 1 }
+
+# Hourly at :30: reads again the repositories whose head (mojo.live_heads)
+# moved since their last read, 60 a run, longest stale first, as mojo_retool
+# and mojo_versions read them (two clones each: the full history and a
+# blobless HEAD), and records each try in mojo.refreshed. 60 an hour drains
+# the backlog of ~1,950 repositories in about a day and a half; then a
+# repository's rows follow its head within about 7 hours (6 hours' rest after
+# a read, 24 for one over 1 GB like modular/modular; a failed read waits 6
+# hours, doubling up to a week). The same limits as mojo_retool.
+# MOJO_REFRESH_MAX_REPOS, _MIN_HOURS, _BIG_KB, _BIG_HOURS, _RETRY_HOURS and
+# _MAX_RETRY_HOURS override the defaults (pipelines/mojo_refresh.mojo).
+[pipelines.mojo_refresh]
+memory_gb = "auto..4"
+env = { DISTA_WORKER_SLOTS = "2" }
+# One run at a time of the pipelines that write these tables (mojo_history,
+# mojo_retool, mojo_versions and this one), across the cluster and a deploy's
+# handover: each reads a table whole and replaces it, or (mojo_history)
+# appends the repositories it found missing, so a run that read before
+# another's commit could write back old rows or add some twice
+# (src/rewrite.mojo). After a deploy a run of the new version waits at most
+# HANDOVER_WAIT_SECONDS for one of the old to end, so their runs stay well
+# under it: 60 repositories here, 50 in the others.
+concurrency = { key = "mojo_repo_rows", limit = 1 }
 
 [pipelines.ballast]
 # Learned (morca #269), the subject of the test: pipelines/ballast.mojo has

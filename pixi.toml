@@ -25,7 +25,8 @@ build-mojo-embed = "mkdir -p build && rm -f build/mojo_embed && mojo build -I sr
 build-mojo-issues = "mkdir -p build && rm -f build/mojo_issues && mojo build -I src pipelines/mojo_issues.mojo -o build/mojo_issues"
 build-mojo-live = "mkdir -p build && rm -f build/mojo_live && mojo build -I src pipelines/mojo_live.mojo -o build/mojo_live"
 build-mojo-retool = "mkdir -p build && rm -f build/mojo_retool && mojo build -I src pipelines/mojo_retool.mojo -o build/mojo_retool"
-build-pipelines = { depends-on = ["build-gharchive", "build-gharchive-index", "build-mojo-repos", "build-mojo-history", "build-mojo-retool", "build-mojo-versions", "build-mojo-activity", "build-mojo-stats", "build-mojo-embed", "build-mojo-issues", "build-mojo-live"] }
+build-mojo-refresh = "mkdir -p build && rm -f build/mojo_refresh && mojo build -I src pipelines/mojo_refresh.mojo -o build/mojo_refresh"
+build-pipelines = { depends-on = ["build-gharchive", "build-gharchive-index", "build-mojo-repos", "build-mojo-history", "build-mojo-retool", "build-mojo-versions", "build-mojo-activity", "build-mojo-stats", "build-mojo-embed", "build-mojo-issues", "build-mojo-live", "build-mojo-refresh"] }
 # Every program, as in the image: two multi-call binaries,
 # build/multicall-apps and build/multicall-pipelines, and build/morca,
 # build/gharchive... as links to them (scripts/build.sh), so the code they
