@@ -1,5 +1,6 @@
 """`POST /mcp`: an MCP server over the console's data, for agents writing
-Mojo (#229). Remote, read-only and without auth.
+Mojo (#229). Remote and without auth; its tools only read, except
+`get_more_tools`, which records a report for us.
 
 The transport is MCP's Streamable HTTP, stateless: one JSON-RPC 2.0 message
 in the POST body, one `application/json` answer, no SSE and no session id.
@@ -14,11 +15,22 @@ overview's numbers), so they add no query and their numbers match the
 pages'. Each answer is trimmed to what an agent needs and has `as_of` and
 the `url` of the page on mojourney.dev.
 
+The seventh tool, last in tools/list, is `get_more_tools`, PostHog's
+"missing capability" tool as its SDKs add it (posthog-js
+`packages/mcp/src/extensions/tools.ts`, the same name, description, schema,
+annotations and answer): an agent that finds no tool for what its user
+asked calls it with a `context` saying what it wanted. It reads nothing from
+the census and returns no tools: the report becomes a
+`$mcp_missing_capability` event (`mcp_events`), the rows of MCP Analytics'
+"Missing capabilities" page, and the agent gets the SDK's acknowledgement.
+Without `POSTHOG_KEY` it answers the same and nothing is sent. It counts
+towards the tools/call limit like the others.
+
 Limits: the body is at most `MAX_BODY` bytes, a bad message gets a JSON-RPC
 error (never a 500), and each client (by `CF-Connecting-IP`) may make
 `MCP_CALLS_PER_MINUTE` tools/calls a minute (default 60), then gets 429.
-`initialize`, `tools/list` and each call to a tool are events in PostHog, in
-its MCP Analytics schema (`mcp_events`).
+`initialize`, `tools/list`, each call to a tool and each `get_more_tools`
+report are events in PostHog, in its MCP Analytics schema (`mcp_events`).
 """
 
 from std.memory.alloc import unsafe_alloc
@@ -41,7 +53,8 @@ from console_cache import Cache
 from console_layout import SITE_URL, census_version
 from console_list import _matches, meaning_hits
 from mcp_events import (
-    ClientIds, EventQueue, HEADER_MAX, McpEvent, client_of_agent, cut, event_json, js, session_id, trim_arguments,
+    ClientIds, EventQueue, HEADER_MAX, INTENT_MAX, MISSING_CAPABILITY, McpEvent, client_of_agent, cut, event_json, js,
+    session_id, trim_arguments,
 )
 
 
@@ -323,6 +336,19 @@ def _category_arg(b: Span[UInt8, _], args: Range) raises -> String:
 # ── Tools ───────────────────────────────────────────────────────────────
 
 
+comptime MORE_TOOLS = "get_more_tools"
+"""PostHog's tool for reporting a missing capability (`GET_MORE_TOOLS_NAME`)."""
+comptime MORE_TOOLS_DESCRIPTION = (
+    "Report that the user's request needs a capability this server does not have. Records the report for the"
+    " server's developers; it does not return or add tools."
+)
+comptime MORE_TOOLS_REPLY = (
+    "Unfortunately, we have shown you the full tool list. We have noted your feedback and will work to improve the"
+    " tool list in the future."
+)
+"""What `get_more_tools` answers (the SDK's `getMoreToolsResult`)."""
+
+
 comptime DATA_NOTE = (
     " The data: public GitHub repos that contain Mojo code, found in GH Archive"
     " and read with the GitHub API and their git history, updated daily"
@@ -414,13 +440,25 @@ def tools_json() -> String:
                 DATA_NOTE,
             )
         ),
-        ',"inputSchema":{"type":"object","properties":{}}}',
+        ',"inputSchema":{"type":"object","properties":{}}},',
+        '{"name":', js(MORE_TOOLS), ',"description":', js(MORE_TOOLS_DESCRIPTION),
+        ',"inputSchema":{"type":"object","properties":{"context":{"type":"string","description":',
+        '"A description of your goal and what kind of tool would help accomplish it."}},"required":["context"]}',
+        ',"annotations":{"readOnlyHint":false,"destructiveHint":false,"idempotentHint":false,"openWorldHint":false}}',
         "]",
     )
 
 
 def tool_names() -> List[String]:
+    """The tools over the census; tools/list also has `MORE_TOOLS`."""
     return ["search_repos", "list_repos", "get_repo", "similar_repos", "version_adoption", "overview"]
+
+
+def listed_tool_names() -> List[String]:
+    """tools/list's tools, in order: `tool_names` and `MORE_TOOLS`."""
+    var out = tool_names()
+    out.append(MORE_TOOLS)
+    return out^
 
 
 @fieldwise_init
@@ -796,6 +834,8 @@ struct Outcome(Movable):
     var status: String
     var error_type: String
     var results: Int
+    var intent: String
+    """A `get_more_tools` report, cut to `INTENT_MAX`."""
 
     def __init__(out self):
         self.event = String()
@@ -808,6 +848,7 @@ struct Outcome(Movable):
         self.status = String("ok")
         self.error_type = String()
         self.results = 0
+        self.intent = String()
 
 
 def _json_response(status: Int, var body: String) raises -> Response:
@@ -951,6 +992,8 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
                 js(
                     "Read-only tools over Mojourney, the census of public GitHub repos with Mojo code:"
                     " search and list the repos, read one, find similar ones, and see Mojo version adoption."
+                    " If none of them can do what the user needs, get_more_tools reports that to Mojourney's"
+                    " developers: it reads nothing and returns no tools."
                 ),
                 "}",
             ),
@@ -959,7 +1002,7 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
         return _rpc_result(id, "{}")
     if method == "tools/list":
         oc.event = "$mcp_tools_list"
-        oc.results = len(tool_names())
+        oc.results = len(listed_tool_names())
         return _rpc_result(id, String('{"tools":', tools_json(), "}"))
     if method != "tools/call":
         return _rpc_error(oc, 200, id, METHOD_NOT_FOUND, String("Method not found: ", cut(method, 100)))
@@ -982,10 +1025,24 @@ def handle_mcp(req: Request, c: Cache, mut st: McpState, mut oc: Outcome, model:
         )
         resp.headers.set("Retry-After", "60")
         return resp^
-    if name not in tool_names():
+    if name != MORE_TOOLS and name not in tool_names():
         return _rpc_error(oc, 200, id, INVALID_PARAMS, String("Unknown tool: ", cut(name, 100)))
     if args.found() and not _is_object(b, args):
         return _rpc_error(oc, 200, id, INVALID_PARAMS, "`arguments` must be an object.")
+    if name == MORE_TOOLS:
+        # Needs no data, so it answers while the census warms up too. Only an
+        # accepted report is an event, and never a tool call.
+        var context: String
+        try:
+            context = _str_arg(b, args, "context", required=True)
+        except e:
+            oc.status = "tool_error"
+            oc.error_type = "validation"
+            return _rpc_result(id, _tool_result(String(e), True))
+        oc.event = MISSING_CAPABILITY
+        oc.arguments = String()
+        oc.intent = cut(context, INTENT_MAX)
+        return _rpc_result(id, String('{"content":[{"type":"text","text":', js(MORE_TOOLS_REPLY), '}],"isError":false}'))
     if not c.ready:
         oc.status = "tool_error"
         oc.error_type = "internal"
@@ -1015,10 +1072,10 @@ def mcp_event(req: Request, oc: Outcome, resp: Response, mut st: McpState, start
     var at_us = t * 1_000_000 - Int64(ms) * 1000
     return McpEvent(
         oc.event, st.ids.id_of(client_ip(req), t // 86400), session_id(at_us), at_us, census_version(), oc.tool,
-        oc.arguments, tool_names() if oc.event == "$mcp_tools_list" else List[String](), oc.client_name,
+        oc.arguments, listed_tool_names() if oc.event == "$mcp_tools_list" else List[String](), oc.client_name,
         oc.client_version, cut(String(req.headers.get("User-Agent").strip()), HEADER_MAX),
         cut(String(req.headers.get("X-Anthropic-Client").strip()), HEADER_MAX), oc.protocol_version, oc.status,
-        oc.error_type, oc.results, ms, len(resp.body),
+        oc.error_type, oc.results, ms, len(resp.body), oc.intent,
     )
 
 
