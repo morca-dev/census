@@ -35,6 +35,7 @@ comptime ISSUES = "mojo.issues"
 comptime LIVE_COMMITS = "mojo.live_commits"
 comptime LIVE_HEADS = "mojo.live_heads"
 comptime MEASURES = "mojo.measures"
+comptime REFRESHED = "mojo.refreshed"
 
 comptime EVENTS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -515,6 +516,27 @@ comptime LIVE_HEADS_SCHEMA = (
 rewritten whole by a poll that saw one move."""
 
 
+comptime REFRESHED_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"head","required":false,"type":"string"},'
+    '{"id":3,"name":"read_at","required":false,"type":"timestamptz"},'
+    '{"id":4,"name":"tried_at","required":true,"type":"timestamptz"},'
+    '{"id":5,"name":"outcome","required":true,"type":"string"},'
+    '{"id":6,"name":"failures","required":true,"type":"long"},'
+    '{"id":7,"name":"error","required":false,"type":"string"}]}'
+)
+"""One row per repository mojo_refresh has tried to read again, rewritten
+whole by each run that read some (`refresh.mojo`): `head` is the
+default-branch head (from mojo.live_heads) its rows in mojo.commits,
+mojo.repo_versions and the other history tables were last read for, and
+`read_at` when; `tried_at` is the last try, `outcome` `ok` or `failed`,
+`failures` the failed tries since the last `ok` (the back-off) and `error`
+the last one's. A failed try keeps the `head` and `read_at` of the last
+good one. A repository with no row was read only by mojo_history,
+mojo_retool or mojo_versions."""
+
+
 comptime MEASURES_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
     '{"id":1,"name":"pipeline","required":true,"type":"string"},'
@@ -541,6 +563,10 @@ def live_commits_schema() raises -> Schema:
 
 def live_heads_schema() raises -> Schema:
     return Schema.parse(LIVE_HEADS_SCHEMA)
+
+
+def refreshed_schema() raises -> Schema:
+    return Schema.parse(REFRESHED_SCHEMA)
 
 
 def repo_embeddings_schema() raises -> Schema:
