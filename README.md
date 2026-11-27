@@ -595,8 +595,16 @@ in the [MCP Registry](https://registry.modelcontextprotocol.io) as
 mojourney.dev by fetching `/.well-known/mcp-registry-auth`, which the console
 serves (`REGISTRY_AUTH` in `src/console_ai_page.mojo`). The matching Ed25519
 private key is not in the repo; it is at `~/.config/mojourney/mcp-registry-key.pem`
-on the Mac. After a release is deployed, set `version` in `server.json` to it
-and publish (OpenSSL 3, `brew install mcp-publisher`):
+on the Mac.
+
+The entry only says where the server is (its title, description, website and
+the `/mcp` URL), and agents that find it there connect to that URL, which
+serves whatever is deployed. So an ordinary release leaves `server.json` alone
+and publishes nothing; the registry's `version` then trails the census's,
+which changes nothing for anyone. Publish only when the entry itself changes:
+in the PR that changes it, set `version` in `server.json` to the census
+release that will carry it (the registry takes each version once), and after
+that release is deployed (OpenSSL 3, `brew install mcp-publisher`):
 
 ```sh
 KEY=~/.config/mojourney/mcp-registry-key.pem
