@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.27.0 - 2026-11-27
+
+- **Agents can report a missing tool:** `/mcp` lists `get_more_tools`, PostHog's tool for an agent to say what it needed and couldn't find, and sends each report to PostHog as a `$mcp_missing_capability` (its text cut to 2,048 characters), which fills MCP Analytics' "Missing capabilities" page; it reads nothing from the census, and without `POSTHOG_KEY` it answers the same and sends nothing. (#256)
+
 ## 1.26.0 - 2026-11-27
 
 - **Repos already in the census follow their head:** a new hourly pipeline, `mojo_refresh`, reads again up to 60 repos a run whose default branch moved since their last read (oldest first, backing off after failures) and replaces their commits, migrations, tags, contributors, Mojo version and dependencies, so no backfill by hand is needed; deploying is enough, and the backlog drains in about a day and a half. (#253)
