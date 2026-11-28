@@ -20,10 +20,12 @@ from iceberg.types import P_DATE, P_TIMESTAMPTZ
 from iceberg.values import Datum
 
 from days import days_of
+from depnames import DepName, dep_names_batch
 from deps import Dep, RepoDep
 from historyrows import repo_deps_batch
 from lake import (
     COMMITS_SCHEMA,
+    DEP_NAMES_SCHEMA,
     REPO_DEPS_SCHEMA,
     REPO_STATS_SCHEMA,
     REPO_VERSIONS_SCHEMA,
@@ -169,7 +171,8 @@ def test_libraries_with_head_versions() raises:
     _ = rv_t.append([batch_of(v)])
     # mojo.repo_deps: o/old names o/locked by URL (another case), o/guess by
     # the name o/locked publishes; the toolchain and a repo's own name don't
-    # count.
+    # count; o/old's conda `unread` is conda-forge's package (mojo.dep_names),
+    # not o/unread.
     var deps_t = cat.create_table("mojo", "repo_deps", Schema.parse(REPO_DEPS_SCHEMA))
     var at = _us("2026-11-05")
     var drows: List[RepoDep] = [
@@ -178,8 +181,16 @@ def test_libraries_with_head_versions() raises:
         RepoDep("o/old", at, Dep("depends", "git", "lockedlib", "O/Locked", "dependencies", "pixi.toml")),
         RepoDep("o/guess", at, Dep("depends", "conda", "locked_lib", "", "requirements.run", "recipe.yaml")),
         RepoDep("o/guess", at, Dep("depends", "conda", "guess", "", "dependencies", "pixi.toml")),
+        RepoDep("o/old", at, Dep("depends", "conda", "Unread", "", "dependencies", "pixi.toml")),
     ]
     _ = deps_t.append([repo_deps_batch(drows)])
+    var names_t = cat.create_table("mojo", "dep_names", Schema.parse(DEP_NAMES_SCHEMA))
+    var nrows: List[DepName] = [
+        DepName("unread", at, "ok", True),
+        # Not answered: `locked-lib` resolves by name as before.
+        DepName("locked-lib", at, "error HTTP 500", False),
+    ]
+    _ = names_t.append([dep_names_batch(nrows)])
 
     _ = setenv("MORCA_WAREHOUSE", dir)
     var b = Builder(Int(days_of("2026-11-05")))
@@ -213,6 +224,7 @@ def test_libraries_with_head_versions() raises:
             assert_equal(l.version_estimate, "0.4")
             seen += 1
         elif l.repo == "o/unread":
+            assert_equal(len(l.used_by), 0)
             assert_equal(l.mojo_version, "")
             assert_equal(l.version_estimate, "")
             seen += 1

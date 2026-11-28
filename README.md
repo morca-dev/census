@@ -145,8 +145,11 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   with its `mojo.repo_versions` row, whose `declared_deps` counts them
   (toolchain left out; null for a row read before dependencies were). The
   console resolves them to census repositories at each build
-  (`deps.resolve`: GitHub URL, then a published package name, then a unique
-  repository name) and shows "Depends on" (Mojo libraries, of the declared
+  (`deps.resolve`: GitHub URL or `owner/name`, then a published package
+  name, then a unique repository name; by name only a `conda` dependency
+  whose name isn't a conda-forge package (`mojo.dep_names`, from
+  mojo_stats), or a `pypi` one that a census repository publishes from its
+  pyproject, never a `git` one; Modular's own packages never) and shows "Depends on" (Mojo libraries, of the declared
   total) and "Used by" on each repo page, a Used by column in the Repos
   table and "Most depended on" on the Overview. "Used by" counts a
   repository that depends on a fork of the library (`mojo.dep_forks`, from
@@ -191,6 +194,12 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   replaces that day's rows. Then it asks once about each GitHub repository
   that `mojo.repo_deps` names and `mojo.repos` doesn't have, and keeps
   whether it is a fork, its `parent` and its `source` in `mojo.dep_forks`.
+  Last it asks anaconda.org (`HEAD /package/conda-forge/<name>`) about each
+  `conda` dependency name the console would match to a census repository
+  by name, as normalised and as written, and keeps whether conda-forge has
+  it in `mojo.dep_names` (asked again after 30 days, an error the next day,
+  keeping its last answer): such a name, like `requests` or `sqlite`, is
+  conda-forge's package and isn't matched.
 - **`pipelines/mojo_embed.mojo`**: daily at 07:00 UTC (daily partitions
   from 2026-11-10), a sentence embedding of each repository's name,
   description and topics into `mojo.repo_embeddings` (384 float32 values,

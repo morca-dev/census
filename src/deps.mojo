@@ -58,21 +58,45 @@ struct Dep(Copyable, Movable):
     """The package name as written."""
     var dep_repo: String
     """`owner/name` when the dependency is a GitHub URL (`git = ...`,
-    `url = ...`, `name @ git+https://...`), else empty."""
+    `url = ...`, `name @ git+https://...`) or GitHub's `owner/name`
+    shorthand (`git = "o/r"`, `github_shorthand`), else empty."""
     var section: String
     """Where in the file: `dependencies`, `feature.test.dependencies`,
     `package.run-dependencies`, `requirements.host`, `project.dependencies`."""
     var file: String
 
 
-def toolchain(name: String) -> Bool:
-    """Whether `name` is Modular's toolchain (`mojo`, `max`, ...) rather than
-    a library: every Mojo project depends on it, so it isn't counted."""
-    var n = norm_name(name)
+def modular_packages() -> List[String]:
+    """The packages Modular publishes on conda.modular.com (`max`, `max-nightly`)
+    as of 2026-11: its toolchain and tools, none of them a Mojo library of
+    the census, whatever repository is named like one (`mojo-python`)."""
+    return [
+        "max", "max-all", "max-benchmark", "max-core", "max-pipelines",
+        "max-python", "max-serve", "mblack", "modular", "mojo",
+        "mojo-compiler", "mojo-dev", "mojo-jupyter", "mojo-python",
+    ]
+
+
+def _carries_mojo(n: String) -> Bool:
+    """Whether the normalised name `n` is a package that installs Mojo
+    (`versions.packages`, and `max-pipelines`)."""
     for p in packages():
         if n == p:
             return True
-    return n == "max-pipelines" or n == "mojo-compiler" or n == "mblack"
+    return n == "max-pipelines"
+
+
+def toolchain(name: String) -> Bool:
+    """Whether `name` is Modular's toolchain (`mojo`, `max`, ...) or another
+    package of its channel (`modular_packages`) rather than a library: every
+    Mojo project depends on it, so it isn't counted."""
+    var n = norm_name(name)
+    if _carries_mojo(n):
+        return True
+    for p in modular_packages():
+        if n == p:
+            return True
+    return False
 
 
 def norm_name(name: String) -> String:
@@ -128,6 +152,41 @@ def github_repo(url: String) -> String:
     if name.byte_length() == 0:
         return String()
     return String(parts[0], "/", name)
+
+
+def _owner_char(c: UInt8) -> Bool:
+    """Whether `c` can be in a GitHub owner: a letter, a digit or `-`."""
+    return (
+        (c >= 48 and c <= 57) or (c >= 97 and c <= 122) or (c >= 65 and c <= 90)
+        or c == UInt8(ord("-"))
+    )
+
+
+def github_shorthand(spec: String) -> String:
+    """`owner/name` when a `git = "..."` spec is GitHub's shorthand for a
+    repository (`git = "Mosaad-M/json"`): no scheme or host, exactly one
+    `/`, an owner of letters, digits and `-` (not first), a name of
+    package-name characters, `.git` dropped; else empty."""
+    var s = String(spec.strip())
+    var slash = s.find("/").or_else(-1)
+    if slash <= 0 or s.find("/", slash + 1).or_else(-1) >= 0:
+        return String()
+    var owner = String(s[byte=:slash])
+    var name = String(s[byte = slash + 1 :])
+    if name.endswith(".git"):
+        var cut = String(name[byte = : name.byte_length() - 4])
+        name = cut^
+    if owner.byte_length() > 39 or owner.startswith("-"):
+        return String()
+    for c in owner.as_bytes():
+        if not _owner_char(c):
+            return String()
+    if name.byte_length() == 0 or name == "." or name == "..":
+        return String()
+    for c in name.as_bytes():
+        if not _name_char(c):
+            return String()
+    return String(owner, "/", name)
 
 
 def _strip_comment(line: String, after_space: Bool = False) -> String:
@@ -270,6 +329,8 @@ def _toml_dep(name: String, value: String, section: String, file: String) -> Dep
         if git.byte_length() > 0:
             kind = String("git")
             repo = github_repo(git)
+            if repo.byte_length() == 0:
+                repo = github_shorthand(git)
         elif url.byte_length() > 0:
             kind = String("url")
             repo = github_repo(url)
@@ -550,11 +611,11 @@ def is_recipe(path: String) -> Bool:
 
 
 def names_mojo_pkg(path: String, text: String) -> Bool:
-    """Whether the manifest `path` (`text`) depends on a Mojo package
-    (`toolchain`, less the `mblack` formatter): what makes a
+    """Whether the manifest `path` (`text`) depends on a package that
+    installs Mojo (`versions.packages`, `max-pipelines`): what makes a
     `pyproject.toml` or `requirements.txt` the way a repository gets Mojo."""
     for ref d in manifest_deps(path, text):
-        if d.relation == DEPENDS and toolchain(d.name) and norm_name(d.name) != "mblack":
+        if d.relation == DEPENDS and _carries_mojo(norm_name(d.name)):
             return True
     return False
 
@@ -684,26 +745,162 @@ def _sorted(var xs: List[String]) -> List[String]:
     return xs^
 
 
+def _add_once(mut d: Dict[String, List[String]], key: String, value: String) raises:
+    """`value` appended to `d[key]` unless it is there already."""
+    if key not in d:
+        d[key] = List[String]()
+    for x in d[key]:
+        if x == value:
+            return
+    d[key].append(value)
+
+
+struct _Census(Movable):
+    """The census repositories by the names `resolve` matches a dependency
+    against: lowercased `owner/name` (old names too), the normalised name
+    part, and the names they publish."""
+
+    var by_lower: Dict[String, String]
+    """A lowercased `owner/name`, current or old (`aliases`), to the
+    repository in `repos`."""
+    var by_short: Dict[String, List[String]]
+    """A `norm_name` of a name part to the repositories that have it."""
+    var provided: Dict[String, List[String]]
+    """A published name (`norm_name`; workspace names left out) to the
+    repositories that publish it."""
+    var provided_py: Dict[String, List[String]]
+    """Of `provided`, the names published by a pyproject's `[project]`
+    table, which alone can be a PyPI project."""
+
+    def __init__(
+        out self, repos: List[String], rows: List[RepoDep], aliases: Dict[String, String]
+    ) raises:
+        self.by_lower = Dict[String, String]()
+        self.by_short = Dict[String, List[String]]()
+        self.provided = Dict[String, List[String]]()
+        self.provided_py = Dict[String, List[String]]()
+        for r in repos:
+            self.by_lower[r.lower()] = r
+            _add_once(self.by_short, norm_name(_short(r)), r)
+        for e in aliases.items():
+            var cur = e.value.lower()
+            if cur not in self.by_lower or e.key in self.by_lower:
+                continue
+            var r = self.by_lower[cur]
+            self.by_lower[e.key] = r
+            _add_once(self.by_short, norm_name(_short(e.key)), r)
+        for ref rd in rows:
+            if rd.dep.relation != PROVIDES or rd.dep.kind == "workspace":
+                continue
+            if rd.repo.lower() not in self.by_lower:
+                continue
+            var n = norm_name(rd.dep.name)
+            if n.byte_length() == 0:
+                continue
+            var owner = self.by_lower[rd.repo.lower()]
+            _add_once(self.provided, n, owner)
+            if rd.dep.kind == "pyproject":
+                _add_once(self.provided_py, n, owner)
+
+    def by_name(self, d: Dep, conda_forge: Dict[String, Bool]) raises -> String:
+        """The repository a dependency without a GitHub repository resolves
+        to by its name (`resolve`'s rules 2 and 3 as its kind allows), or
+        empty."""
+        if d.kind == "path" or d.kind == "url" or d.kind == "git":
+            return String()
+        var n = norm_name(d.name)
+        if d.kind == "pypi":
+            return _published(self.provided_py, n)
+        if n in conda_forge:
+            return String()
+        var target = _published(self.provided, n)
+        if target.byte_length() == 0 and n in self.by_short and len(self.by_short[n]) == 1:
+            target = self.by_short[n][0]
+        return target^
+
+
+def _published(provided: Dict[String, List[String]], n: String) raises -> String:
+    """The repository that publishes `n`: the only one, or of several the
+    one whose own name is `n`; else empty."""
+    if n not in provided:
+        return String()
+    ref ps = provided[n]
+    if len(ps) == 1:
+        return ps[0]
+    for p in ps:
+        if norm_name(_short(p)) == n:
+            return p
+    return String()
+
+
+def conda_lookups(
+    repos: List[String],
+    rows: List[RepoDep],
+    aliases: Dict[String, String] = Dict[String, String](),
+) raises -> Dict[String, List[String]]:
+    """The `conda` dependencies of census repositories that `resolve` would
+    match to a census repository by name (rules 2 and 3), by `norm_name`,
+    each with the forms to ask conda-forge about: the normalised name, then
+    each other spelling as written, lowercased (`lightbug_http`), once.
+    Names with characters a package name can't have are left out. What
+    mojo_stats asks anaconda.org about for mojo.dep_names."""
+    var census = _Census(repos, rows, aliases)
+    var none = Dict[String, Bool]()
+    var out = Dict[String, List[String]]()
+    for ref rd in rows:
+        ref d = rd.dep
+        if d.relation != DEPENDS or d.kind != "conda" or d.dep_repo.byte_length() > 0:
+            continue
+        if toolchain(d.name) or rd.repo.lower() not in census.by_lower:
+            continue
+        var n = norm_name(d.name)
+        var plain = True
+        for c in n.as_bytes():
+            if not _name_char(c):
+                plain = False
+        if n.byte_length() == 0 or not plain:
+            continue
+        var target = census.by_name(d, none)
+        if target.byte_length() == 0 or target == census.by_lower[rd.repo.lower()]:
+            continue
+        _add_once(out, n, n)
+        _add_once(out, n, String(d.name.strip()).lower())
+    return out^
+
+
 def resolve(
     repos: List[String],
     rows: List[RepoDep],
     forks: Dict[String, ForkOf] = Dict[String, ForkOf](),
     aliases: Dict[String, String] = Dict[String, String](),
     republished: Dict[String, String] = republishes(),
+    conda_forge: Dict[String, Bool] = Dict[String, Bool](),
 ) raises -> DepGraph:
     """Each repository's dependencies that are census repositories, and the
     reverse.
 
     A dependency resolves to a repository of `repos`, in this order:
-    1. its GitHub URL (`git = "https://github.com/o/r"`), matched without
-       regard to case;
+    1. its GitHub repository (`git = "https://github.com/o/r"`, or the
+       shorthand `git = "o/r"`), matched without regard to case;
     2. a name a census repository publishes (its `[package]` name, a
        recipe's or a pyproject's name), when one repository does; when
        several do, the one whose own name matches;
     3. a census repository whose name matches (`lightbug_http` for
        `Lightbug-HQ/lightbug_http`), when only one has it.
-    Names compare by `norm_name`. The toolchain (`mojo`, `max`, ...) and a
-    `path` dependency don't resolve, nor does a repository to itself.
+    Names compare by `norm_name`. Rules 2 and 3 depend on the kind, since a
+    name means a package of one index, and a wrong link is worse than a
+    missing one:
+    - `conda`: both, unless the name is a conda-forge package
+      (`conda_forge`, by `norm_name`, from mojo.dep_names): `requests` or
+      `sqlite` is conda-forge's, not a Mojo repository's of that name;
+    - `pypi`: only rule 2, and only to a repository that publishes the name
+      from a pyproject (`provides` kind `pyproject`), the only kind of name
+      that can be a PyPI project;
+    - `git`: neither: it names one repository, and when that isn't in the
+      census (and isn't a fork of a census repository) nothing else is;
+    - `url` and `path`: neither.
+    The toolchain and the other packages of Modular's channel (`toolchain`)
+    don't resolve, nor does a repository to itself.
 
     A GitHub URL of a repository that isn't in `repos` but is a fork
     (`forks`, keyed by the lowercased `owner/name`) resolves to its source,
@@ -725,48 +922,7 @@ def resolve(
     project a dependent of the upstream, through a fork, when the upstream
     is a census repository."""
     var g = DepGraph()
-    var by_lower = Dict[String, String]()
-    var by_short = Dict[String, List[String]]()
-    for r in repos:
-        by_lower[r.lower()] = r
-        var s = norm_name(_short(r))
-        if s not in by_short:
-            by_short[s] = List[String]()
-        by_short[s].append(r)
-    for e in aliases.items():
-        var cur = e.value.lower()
-        if cur not in by_lower or e.key in by_lower:
-            continue
-        var r = by_lower[cur]
-        by_lower[e.key] = r
-        var s = norm_name(_short(e.key))
-        if s not in by_short:
-            by_short[s] = List[String]()
-        var have = False
-        for x in by_short[s]:
-            if x == r:
-                have = True
-        if not have:
-            by_short[s].append(r)
-    # Published names, by `norm_name`.
-    var provided = Dict[String, List[String]]()
-    for ref rd in rows:
-        if rd.dep.relation != PROVIDES or rd.dep.kind == "workspace":
-            continue
-        if rd.repo.lower() not in by_lower:
-            continue
-        var n = norm_name(rd.dep.name)
-        if n.byte_length() == 0:
-            continue
-        if n not in provided:
-            provided[n] = List[String]()
-        var owner = by_lower[rd.repo.lower()]
-        var have = False
-        for x in provided[n]:
-            if x == owner:
-                have = True
-        if not have:
-            provided[n].append(owner)
+    var census = _Census(repos, rows, aliases)
     # Per repository, its targets, each True when declared directly and
     # False when reached only through a fork.
     var deps = Dict[String, Dict[String, Bool]]()
@@ -776,42 +932,33 @@ def resolve(
         if d.relation != DEPENDS or toolchain(d.name):
             continue
         var me_low = rd.repo.lower()
-        if me_low not in by_lower:
+        if me_low not in census.by_lower:
             continue
-        var me = by_lower[me_low]
+        var me = census.by_lower[me_low]
         var n = norm_name(d.name)
         if me not in declared:
             declared[me] = Dict[String, String]()
         if n not in declared[me]:
             declared[me][n] = d.name
-        var target = String()
+        var target: String
         var direct = True
         if d.dep_repo.byte_length() > 0:
             var low = d.dep_repo.lower()
-            target = by_lower.get(low, String())
+            target = census.by_lower.get(low, String())
             if target.byte_length() == 0 and low in forks:
                 ref f = forks[low]
-                target = by_lower.get(f.source.lower(), String())
+                target = census.by_lower.get(f.source.lower(), String())
                 if target.byte_length() == 0:
-                    target = by_lower.get(f.parent.lower(), String())
+                    target = census.by_lower.get(f.parent.lower(), String())
                 direct = False
-        elif d.kind != "path" and d.kind != "url":
-            if n in provided:
-                ref ps = provided[n]
-                if len(ps) == 1:
-                    target = ps[0]
-                else:
-                    for p in ps:
-                        if norm_name(_short(p)) == n:
-                            target = p
-            if target.byte_length() == 0 and n in by_short and len(by_short[n]) == 1:
-                target = by_short[n][0]
+        else:
+            target = census.by_name(d, conda_forge)
         # A republish of a census repository (`republishes`): its upstream
         # too, as through a fork.
         var upstream = String()
         var named = target.lower() if target.byte_length() > 0 else d.dep_repo.lower()
         if named.byte_length() > 0 and named in republished:
-            upstream = by_lower.get(republished.get(named, String()).lower(), String())
+            upstream = census.by_lower.get(republished.get(named, String()).lower(), String())
         if upstream.byte_length() > 0 and upstream != me:
             if me not in deps:
                 deps[me] = Dict[String, Bool]()

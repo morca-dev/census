@@ -2,7 +2,9 @@
 of mojo.repos (a repository in it twice is one), with what mojo.commits and mojo.migrations say about it, and its
 latest row of mojo.repo_stats, and its dependencies (mojo.repo_deps,
 resolved to the census's repositories here, a fork named as a dependency
-to its source by mojo.dep_forks); and per repository its
+to its source by mojo.dep_forks, a conda-forge package's name by
+mojo.dep_names not matched to a repository of that name); and per
+repository its
 activity by month (mojo.activity), releases (mojo.releases) and tags
 (mojo.tags)."""
 
@@ -363,7 +365,7 @@ def _dependencies(mut libs: List[Library], names: Names) raises:
     var repos = List[String]()
     for ref l in libs:
         repos.append(l.repo)
-    var g = resolve(repos, rows, dep_forks(), names.current)
+    var g = resolve(repos, rows, dep_forks(), names.current, conda_forge=conda_forge_names())
     for ref l in libs:
         if l.repo in g.declared:
             l.declared = g.declared[l.repo].copy()
@@ -402,6 +404,36 @@ def dep_forks() raises -> Dict[String, ForkOf]:
                 out[repo] = ForkOf(str_at(b.column(c_parent), r), str_at(b.column(c_source), r))
             elif repo in out:
                 _ = out.pop(repo)
+    return out^
+
+
+def conda_forge_names() raises -> Dict[String, Bool]:
+    """The names of conda dependencies that are conda-forge packages
+    (`deps.norm_name`), from mojo.dep_names (the newest answered row of
+    each); empty if the table doesn't exist. A name without an answer isn't
+    in it, so it resolves by name as before the table was."""
+    var out = Dict[String, Bool]()
+    var at = Dict[String, Int64]()
+    var t = try_load("mojo", "dep_names")
+    if not t:
+        return out^
+    for b in t.value().scan().to_batches():
+        var c_name = col(b, "name")
+        var c_at = col(b, "fetched_at")
+        var c_state = col(b, "state")
+        var c_forge = col(b, "conda_forge")
+        for r in range(b.num_rows):
+            if str_at(b.column(c_state), r) != "ok" or not is_valid(b.column(c_forge), r):
+                continue
+            var name = str_at(b.column(c_name), r)
+            var fetched = i64_at(b.column(c_at), r)
+            if name in at and at[name] >= fetched:
+                continue
+            at[name] = fetched
+            if bool_at(b.column(c_forge), r):
+                out[name] = True
+            elif name in out:
+                _ = out.pop(name)
     return out^
 
 
@@ -898,7 +930,7 @@ def read_sources() raises -> Sources:
     var out = Sources()
     var names: List[String] = [
         "repos", "commits", "repo_stats", "activity", "migrations", "releases", "tags",
-        "repo_embeddings", "issues", "contributors", "dep_forks", "measures",
+        "repo_embeddings", "issues", "contributors", "dep_forks", "measures", "dep_names",
     ]
     for name in names:
         var t = try_load("mojo", name)
