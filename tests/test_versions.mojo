@@ -99,6 +99,8 @@ def test_tooling() raises:
     assert_equal(tooling(_files(mojoproject=True, magic_lock=True)), "magic")
     assert_equal(tooling(_files(pixi_toml=True, magic_lock=True)), "magic")
     assert_equal(tooling(_files(pixi_toml=True, pixi_lock=True)), "pixi")
+    # ExtraMojo: moved to pixi and left its magic.lock behind.
+    assert_equal(tooling(_files(pixi_toml=True, pixi_lock=True, magic_lock=True)), "pixi")
     assert_equal(tooling(_files(mojoproject=True)), "magic")
     assert_equal(tooling(_files(bazel=True)), "bazel")
     # Bazel ranks above pixi, magic and none.

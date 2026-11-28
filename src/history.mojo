@@ -461,14 +461,16 @@ def _read_python(dir: String, sha: String, mut st: _State) raises:
 def _version(dir: String, sha: String, st: _State) raises -> Tuple[String, String]:
     """The Mojo version at `sha` and the file it came from, or two empty
     strings. Lock files win over manifests: a lock names the version that
-    was actually resolved, a manifest only the range asked for. Python
-    files count only when a Python manifest depends on Mojo (`py_mojo`),
-    and the `pyproject.toml` also when pixi reads it."""
+    was actually resolved, a manifest only the range asked for; and
+    `pixi.lock` wins over a `magic.lock` left from before a move to pixi
+    (`versions.lock_files`). Python files count only when a Python manifest
+    depends on Mojo (`py_mojo`), and the `pyproject.toml` also when pixi
+    reads it."""
     var locks = List[String]()
-    if st.f.magic_lock:
-        locks.append("magic.lock")
     if st.f.pixi_lock:
         locks.append("pixi.lock")
+    if st.f.magic_lock:
+        locks.append("magic.lock")
     for l in locks:
         var v = lock_version(_show(dir, sha, l))
         if v.byte_length() > 0:
