@@ -1,4 +1,5 @@
-"""HTTP: GH Archive files, and GitHub's REST API and raw files.
+"""HTTP: GH Archive files, GitHub's REST API and raw files, and whether a
+package is on anaconda.org (`head_status`).
 
 Uses flare's blocking `HttpClient`, with a read timeout as well as the
 connect timeout: without one a stalled connection blocks a read forever
@@ -645,6 +646,16 @@ def raw_file(repo: String, branch: String, file: String) raises -> String:
     if resp.status != 200:
         return String()
     return resp.text()
+
+
+def head_status(url: String, timeout_ms: Int = 30_000) raises -> Int:
+    """The status a HEAD request to `url` gets, without the body (mojo_stats
+    asks anaconda.org whether a package exists, whose GET answers can be
+    megabytes). Connect and each read are bounded by `timeout_ms`."""
+    var c = _client(timeout_ms, timeout_ms)
+    var req = Request(method="HEAD", url=url)
+    req.headers.set("User-Agent", USER_AGENT)
+    return c.send(req).status
 
 
 def post_json(url: String, body: String, timeout_ms: Int = 10_000) raises -> Int:

@@ -27,6 +27,7 @@ comptime CONTRIBUTORS = "mojo.contributors"
 comptime REPO_VERSIONS = "mojo.repo_versions"
 comptime REPO_DEPS = "mojo.repo_deps"
 comptime DEP_FORKS = "mojo.dep_forks"
+comptime DEP_NAMES = "mojo.dep_names"
 comptime CANDIDATES = "gharchive.candidates"
 comptime REPO_HOUR = "gharchive.repo_hour"
 comptime GH_RELEASES = "gharchive.releases"
@@ -288,6 +289,22 @@ themselves, asked about once each by mojo_stats: whether each is a `fork`,
 and its `parent` and the root of its fork network (`source`). `state` is
 mojo.repo_stats': `ok`, `gone`, `blocked` or `error HTTP n` (asked again).
 The console rolls a fork's dependents up into its source (`deps.resolve`)."""
+
+comptime DEP_NAMES_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"name","required":true,"type":"string"},'
+    '{"id":2,"name":"fetched_at","required":true,"type":"timestamptz"},'
+    '{"id":3,"name":"state","required":true,"type":"string"},'
+    '{"id":4,"name":"conda_forge","required":false,"type":"boolean"}]}'
+)
+"""The names of `conda` dependencies that the console would match to a
+census repository by name (`deps.conda_lookups`), by `deps.norm_name`,
+asked about by mojo_stats: whether conda-forge has a package of that name
+(`conda_forge`, from anaconda.org, under the name as normalised or as
+written). `state` is `ok` (answered) or `error HTTP n` / `error` (asked
+again the next day, `conda_forge` null). A name conda-forge has is its
+package, not the repository's, and doesn't resolve by name
+(`deps.resolve`); a name never answered counts as not conda-forge's."""
 
 comptime CANDIDATES_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -579,6 +596,10 @@ def repo_deps_schema() raises -> Schema:
 
 def dep_forks_schema() raises -> Schema:
     return Schema.parse(DEP_FORKS_SCHEMA)
+
+
+def dep_names_schema() raises -> Schema:
+    return Schema.parse(DEP_NAMES_SCHEMA)
 
 
 def checked_schema() raises -> Schema:

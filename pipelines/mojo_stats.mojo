@@ -1,6 +1,7 @@
 """Fetches every Mojo repository's stars, forks, open issues and other GitHub
-numbers each day into mojo.repo_stats, and records which of the other
-repositories they depend on are forks, and of what, in mojo.dep_forks.
+numbers each day into mojo.repo_stats, records which of the other
+repositories they depend on are forks, and of what, in mojo.dep_forks, and
+which conda dependency names are conda-forge packages in mojo.dep_names.
 
 Daily partitions from 2026-11-08, the first day it ran, each filled at
 06:00 UTC for that day (`fire=Current`); GitHub only gives the current
@@ -22,6 +23,17 @@ dependents. One whose answer was an error is asked again the next day; a
 rate limit leaves the rest for the next day, without waiting. This part
 never fails the step.
 
+Last it asks anaconda.org (`HEAD /package/conda-forge/<name>`, 200 or 404)
+about each name of a `conda` dependency that the console would match to a
+census repository by name (`deps.conda_lookups`: `requests`, `sqlite`,
+`emberjson`), under the name as normalised and as written, and keeps
+whether conda-forge has it in mojo.dep_names: such a name is conda-forge's
+package, not the repository's, and isn't matched (`deps.resolve`). A name
+is asked again after 30 days (`depnames.DEP_NAMES_REASK_DAYS`), one whose
+answer was an error the next day, keeping its last answer; at most 400 a
+run (`DEP_NAMES_MAX_ASK`).
+This part never fails the step either.
+
 A rerun of a day replaces that day's rows (`replace.replace_files`), so a
 day has one row per repository however often it runs.
 
@@ -38,9 +50,21 @@ from parquet import RecordBatch
 from cols import bool_at, col, has_col, i32_at, i64_at, str_at, strs_at
 from days import days_of, month_of
 from detect import parse_fork
-from fetch import Reply, github
+from depnames import (
+    CONDA_FORGE_PACKAGE,
+    DEP_NAMES_MAX_ASK,
+    DepName,
+    dep_names_batch,
+    merge_names,
+    name_answer,
+    names_due,
+)
+from deps import RepoDep, conda_lookups
+from fetch import Reply, github, head_status
+from historyrows import repo_dep_rows
 from lake import (
     DEP_FORKS,
+    DEP_NAMES,
     REPOS,
     REPO_DEPS,
     REPO_STATS,
@@ -48,6 +72,7 @@ from lake import (
     add_strs,
     add_ts_or_null,
     dep_forks_schema,
+    dep_names_schema,
     repo_stats_schema,
     repo_stats_spec,
 )
@@ -327,6 +352,71 @@ def _dep_forks(mut ctx: Ctx, repos: List[String], fetched: Int64) raises -> Int:
     return len(asked)
 
 
+def _dep_names(
+    mut ctx: Ctx, repos: List[String], aliases: Dict[String, String], fetched: Int64
+) raises -> Int:
+    """Asks anaconda.org whether conda-forge has each name `conda_lookups`
+    gives that is due (`names_due`) and rewrites mojo.dep_names with the
+    answers (unpartitioned and in `replaces=`, like mojo.dep_forks).
+    `repos` are the census repositories by their current names, `aliases`
+    their other names. Returns how many names it asked about."""
+    var rows = List[RepoDep]()
+    var deps_t = table(ctx, REPO_DEPS)
+    if deps_t.metadata.has_current_snapshot:
+        for b in scan(ctx, deps_t).to_batches():
+            rows.extend(repo_dep_rows(b))
+    var lookups = conda_lookups(repos, rows, aliases)
+    var t = ensure_table(ctx, DEP_NAMES, dep_names_schema())
+    var stored = List[DepName]()
+    var by = Dict[String, DepName]()
+    if t.metadata.has_current_snapshot:
+        for b in t.scan().to_batches():
+            var c = List[Int]()
+            for name in ["name", "fetched_at", "state", "conda_forge"]:
+                c.append(col(b, name))
+            for r in range(b.num_rows):
+                var row = DepName(
+                    str_at(b.column(c[0]), r), i64_at(b.column(c[1]), r),
+                    str_at(b.column(c[2]), r), bool_at(b.column(c[3]), r),
+                )
+                by[row.name] = row.copy()
+                stored.append(row^)
+    var due = names_due(lookups, by, fetched)
+    var asked = List[DepName]()
+    var forge = 0
+    for ref n in due:
+        if len(asked) >= DEP_NAMES_MAX_ASK:
+            break
+        # A network failure ends the asking for today; what was answered
+        # is kept.
+        var statuses = List[Int]()
+        var failed = False
+        for ref form in lookups[n]:
+            try:
+                statuses.append(head_status(String(CONDA_FORGE_PACKAGE, form)))
+            except e:
+                ctx.log(String("dep_names: ", form, ": ", e, "; the rest wait for tomorrow"))
+                failed = True
+                break
+            if statuses[len(statuses) - 1] == 200:
+                break
+        if failed:
+            break
+        var a = name_answer(n, fetched, statuses)
+        if a.conda_forge:
+            forge += 1
+        asked.append(a^)
+    if len(asked) == 0:
+        return 0
+    var id = append(ctx, t, [dep_names_batch(merge_names(stored, asked))])
+    ctx.log(String(
+        "dep_names: asked about ", len(asked), " of ", len(due), " names due (",
+        len(lookups), " conda names resolved by name); ", forge,
+        " on conda-forge; snapshot ", id,
+    ))
+    return len(asked)
+
+
 def refresh(mut ctx: Ctx, d: Day) raises -> Int:
     """Asks GitHub for every Mojo repository's current numbers and replaces the
     day's rows in mojo.repo_stats.
@@ -405,15 +495,24 @@ def refresh(mut ctx: Ctx, d: Day) raises -> Int:
     # The forks among the repositories depended on: a failure here is
     # logged, not raised, so it never costs the day's stats.
     try:
+        var names = names_from(repos, named)
         # A dependency named by a census repository's old or new name is
         # that repository, not one to ask about.
-        var names = names_from(repos, named)
         var census = List[String]()
         for e in names.all.values():
             census.extend(e.copy())
         _ = _dep_forks(ctx, census, fetched)
     except e:
         ctx.log(String("dep_forks: ", e))
+    # The conda names that are conda-forge's: logged, not raised, too.
+    try:
+        var names = names_from(repos, named)
+        var current = List[String]()
+        for k in names.all.keys():
+            current.append(k)
+        _ = _dep_names(ctx, current, names.current, fetched)
+    except e:
+        ctx.log(String("dep_names: ", e))
     return len(repos)
 
 
@@ -433,8 +532,8 @@ comptime Refresh = Step[
     # Under replaces=, a morca.tables `append` to them would replace whole
     # partitions, other keys' rows included: keep writing REPO_STATS through
     # replace_files. DEP_FORKS is unpartitioned and written whole, so its
-    # `append` replaces the table, as meant.
-    replaces=[REPO_STATS, DEP_FORKS],
+    # `append` replaces the table, as meant; DEP_NAMES the same.
+    replaces=[REPO_STATS, DEP_FORKS, DEP_NAMES],
 ]
 # A `Cron` schedule fires on its own. `fire=Current` makes a fire run the
 # partition its time falls in (the day itself, not the day before, which is

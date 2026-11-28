@@ -1,6 +1,6 @@
 """The console: a flare app over mojo.repos, mojo.commits, mojo.migrations,
 mojo.repo_stats, mojo.activity, mojo.releases, mojo.tags, mojo.repo_versions,
-mojo.repo_deps and mojo.dep_forks.
+mojo.repo_deps, mojo.dep_forks and mojo.dep_names.
 
     PORT=8080 pixi run ./build/console
 

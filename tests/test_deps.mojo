@@ -11,19 +11,24 @@ from deps import (
     Dep,
     ForkOf,
     RepoDep,
+    conda_lookups,
     declared_count,
     decode_deps,
     dedupe,
     encode_deps,
     github_repo,
+    github_shorthand,
     is_recipe,
     manifest_deps,
     most_depended,
+    names_mojo_pkg,
     norm_name,
     owner_of,
     resolve,
     second_degree,
+    toolchain,
 )
+from versions import packages
 
 
 def _find(rows: List[Dep], relation: String, name: String, section: String = "") -> Int:
@@ -347,6 +352,179 @@ def test_resolve() raises:
 def _git(repo: String, url_repo: String) -> RepoDep:
     """`repo` depending on the GitHub repository `url_repo` by URL."""
     return RepoDep(repo, 0, Dep(DEPENDS, "git", String(url_repo.split("/")[1]), url_repo, "dependencies", "pixi.toml"))
+
+
+# Mosaad-M/requests' `mojoproject.toml`: its own name, its git
+# dependencies as GitHub's `owner/name` shorthand.
+comptime MOSAAD_REQUESTS = """[project]
+name = "requests"
+channels = ["conda-forge", "https://conda.modular.com/max"]
+platforms = ["osx-arm64", "linux-64"]
+
+[package]
+name = "requests"
+version = "1.12.0"
+
+[dependencies]
+mojo = ">=0.26.1"
+tls  = { git = "Mosaad-M/tls",      version = ">=1.12.0" }
+tcp  = { git = "Mosaad-M/tcp",      version = ">=2.2.0" }
+json = { git = "Mosaad-M/json",     version = ">=3.1.0" }
+"""
+
+
+def test_git_shorthand() raises:
+    assert_equal(github_shorthand("Mosaad-M/json"), "Mosaad-M/json")
+    assert_equal(github_shorthand(" o/duckdb.mojo.git "), "o/duckdb.mojo")
+    # Not a shorthand: a URL, a path, a host, two slashes, an owner GitHub
+    # wouldn't allow.
+    assert_equal(github_shorthand("https://example.com/o/r"), "")
+    assert_equal(github_shorthand("../json"), "")
+    assert_equal(github_shorthand("./json"), "")
+    assert_equal(github_shorthand("gitlab.com/o/r"), "")
+    assert_equal(github_shorthand("o/r/x"), "")
+    assert_equal(github_shorthand("o_x/r"), "")
+    assert_equal(github_shorthand("-o/r"), "")
+    assert_equal(github_shorthand("o/"), "")
+    assert_equal(github_shorthand("/r"), "")
+    assert_equal(github_shorthand("json"), "")
+    var rows = manifest_deps("mojoproject.toml", MOSAAD_REQUESTS)
+    var j = _find(rows, DEPENDS, "json")
+    assert_equal(rows[j].kind, "git")
+    assert_equal(rows[j].dep_repo, "Mosaad-M/json")
+    assert_equal(rows[_find(rows, DEPENDS, "tls")].dep_repo, "Mosaad-M/tls")
+
+
+def test_git_never_by_name() raises:
+    var repos: List[String] = ["ehsanmok/json", "Mosaad-M/requests", "Mosaad-M/tls", "Mosaad-M/tcp"]
+    # As read now: `json` names Mosaad-M/json, which isn't in the census;
+    # tls and tcp are.
+    var rows = _rows("Mosaad-M/requests", "mojoproject.toml", MOSAAD_REQUESTS)
+    var g = resolve(repos, rows)
+    ref req = g.depends_on["Mosaad-M/requests"]
+    assert_equal(len(req), 2)
+    assert_equal(req[0], "Mosaad-M/tcp")
+    assert_equal(req[1], "Mosaad-M/tls")
+    assert_true("ehsanmok/json" not in g.used_by)
+    # As stored before the shorthand was read: a git row with no
+    # repository doesn't fall back to its name.
+    var old = List[RepoDep]()
+    old.append(RepoDep("Mosaad-M/requests", 0, Dep(DEPENDS, "git", "json", "", "dependencies", "mojoproject.toml")))
+    assert_equal(len(resolve(repos, old).used_by), 0)
+    # Mosaad-M/json a fork of ehsanmok/json would roll up into it.
+    var forks = Dict[String, ForkOf]()
+    forks["mosaad-m/json"] = ForkOf("ehsanmok/json", "ehsanmok/json")
+    var f = resolve(repos, rows, forks)
+    assert_equal(len(f.via_forks["ehsanmok/json"]), 1)
+
+
+def test_pypi_by_pyproject_only() raises:
+    var repos: List[String] = [
+        "Mosaad-M/requests", "RalphWalters/MojoX", "abhisheksreesaila/omxcore", "a/app",
+    ]
+    var rows = List[RepoDep]()
+    # Mosaad-M/requests publishes `requests` as a pixi package; PyPI's
+    # `requests` isn't it.
+    rows.append(RepoDep("Mosaad-M/requests", 0, Dep(PROVIDES, "package", "requests", "", "package", "mojoproject.toml")))
+    # omxcore publishes `mxframe` from its pyproject: that can be PyPI's.
+    rows.append(RepoDep("abhisheksreesaila/omxcore", 0, Dep(PROVIDES, "pyproject", "mxframe", "", "project", "pyproject.toml")))
+    rows.extend(_rows("a/app", "requirements.txt", "requests>=2\nmojox\n"))
+    rows.append(RepoDep("a/app", 0, Dep(DEPENDS, "pypi", "MXFrame", "", "pypi-dependencies", "pixi.toml")))
+    var g = resolve(repos, rows)
+    # Not `requests` by the published name, not `mojox` by the repo's name.
+    ref app = g.depends_on["a/app"]
+    assert_equal(len(app), 1)
+    assert_equal(app[0], "abhisheksreesaila/omxcore")
+    assert_true("Mosaad-M/requests" not in g.used_by)
+    assert_true("RalphWalters/MojoX" not in g.used_by)
+    # The same names as conda packages still resolve (none is conda-forge's
+    # here).
+    var conda = List[RepoDep]()
+    conda.append(rows[0].copy())
+    conda.append(RepoDep("a/app", 0, Dep(DEPENDS, "conda", "requests", "", "dependencies", "pixi.toml")))
+    conda.append(RepoDep("a/app", 0, Dep(DEPENDS, "conda", "mojox", "", "dependencies", "pixi.toml")))
+    assert_equal(len(resolve(repos, conda).depends_on["a/app"]), 2)
+
+
+def _conda(repo: String, name: String) -> RepoDep:
+    """`repo` depending on the conda package `name`."""
+    return RepoDep(repo, 0, Dep(DEPENDS, "conda", name, "", "dependencies", "pixi.toml"))
+
+
+def test_conda_forge_names() raises:
+    var repos: List[String] = [
+        "ehsanmok/sqlite", "bgreni/EmberJson", "Lightbug-HQ/lightbug_http",
+        "Mosaad-M/requests", "a/app", "b/app",
+    ]
+    var rows = List[RepoDep]()
+    rows.append(RepoDep("ehsanmok/sqlite", 0, Dep(PROVIDES, "package", "sqlite", "", "package", "pixi.toml")))
+    rows.append(RepoDep("bgreni/EmberJson", 0, Dep(PROVIDES, "recipe", "emberjson", "", "package", "recipe.yaml")))
+    rows.append(RepoDep("Mosaad-M/requests", 0, Dep(PROVIDES, "package", "requests", "", "package", "mojoproject.toml")))
+    rows.append(_conda("a/app", "sqlite"))
+    rows.append(_conda("a/app", "emberjson"))
+    rows.append(_conda("a/app", "Lightbug_HTTP"))
+    rows.append(_conda("b/app", "requests"))
+    rows.append(_conda("b/app", "numpy"))
+    # ehsanmok/sqlite's own name isn't a dependency of it.
+    rows.append(_conda("ehsanmok/sqlite", "sqlite"))
+    # Without the conda-forge fact (mojo.dep_names empty, or no answer
+    # yet): as before.
+    var before = resolve(repos, rows)
+    assert_equal(len(before.depends_on["a/app"]), 3)
+    assert_equal(len(before.used_by["ehsanmok/sqlite"]), 1)
+    assert_equal(len(before.used_by["Mosaad-M/requests"]), 1)
+    # The names to ask about: those that resolve by name; numpy doesn't.
+    var ask = conda_lookups(repos, rows)
+    assert_equal(len(ask), 4)
+    assert_true("sqlite" in ask and "emberjson" in ask and "requests" in ask)
+    ref lb = ask["lightbug-http"]
+    assert_equal(len(lb), 2)
+    assert_equal(lb[0], "lightbug-http")
+    assert_equal(lb[1], "lightbug_http")
+    assert_true("numpy" not in ask)
+    # With it: sqlite and requests are conda-forge's; emberjson and
+    # lightbug_http (on modular-community) still resolve.
+    var forge = Dict[String, Bool]()
+    forge["sqlite"] = True
+    forge["requests"] = True
+    var g = resolve(repos, rows, conda_forge=forge)
+    ref app = g.depends_on["a/app"]
+    assert_equal(len(app), 2)
+    assert_equal(app[0], "bgreni/EmberJson")
+    assert_equal(app[1], "Lightbug-HQ/lightbug_http")
+    assert_true("ehsanmok/sqlite" not in g.used_by)
+    assert_true("Mosaad-M/requests" not in g.used_by)
+    assert_true("b/app" not in g.depends_on)
+    # A URL still resolves whatever the name.
+    rows.append(RepoDep("b/app", 0, Dep(DEPENDS, "git", "sqlite", "ehsanmok/sqlite", "dependencies", "pixi.toml")))
+    assert_equal(len(resolve(repos, rows, conda_forge=forge).used_by["ehsanmok/sqlite"]), 1)
+
+
+def test_modular_packages() raises:
+    # Everything conda.modular.com publishes is the toolchain, and the
+    # lock-file packages keep their order.
+    for n in [
+        "max", "max-all", "max-benchmark", "max-core", "max-pipelines",
+        "max-python", "max-serve", "mblack", "modular", "mojo",
+        "mojo-compiler", "mojo-dev", "mojo-jupyter", "mojo-python", "Mojo_Python",
+    ]:
+        assert_true(toolchain(n), n)
+    assert_true(not toolchain("mojo-learn"))
+    assert_true(not toolchain("emberjson"))
+    var p = packages()
+    assert_equal(len(p), 5)
+    assert_equal(p[0], "mojo-compiler")
+    assert_equal(p[4], "modular")
+    # Maucalderondelab/mojo-python isn't the dependency `mojo-python`.
+    var repos: List[String] = ["Maucalderondelab/mojo-python", "larsbx/finite-math-kernels"]
+    var rows = List[RepoDep]()
+    rows.append(_conda("larsbx/finite-math-kernels", "mojo-python"))
+    var g = resolve(repos, rows)
+    assert_equal(len(g.used_by), 0)
+    assert_true("larsbx/finite-math-kernels" not in g.declared)
+    # A pyproject that names only mojo-jupyter doesn't install Mojo.
+    assert_true(not names_mojo_pkg("requirements.txt", "mojo-jupyter\n"))
+    assert_true(names_mojo_pkg("requirements.txt", "mojo>=0.26\n"))
 
 
 def test_fork_roll_up() raises:
