@@ -26,6 +26,7 @@ from versions import (
     SOURCE_DATE,
     SOURCE_REPO,
     file_version,
+    lock_files,
     lock_version,
     manifest_version,
     pick_version,
@@ -117,15 +118,19 @@ def classify(paths: List[String]) -> Candidates:
     # root (`root`): a nested `pixi.lock` belongs to some example or
     # dependency, not to the project. CI and Docker files can live deeper.
     var c = Candidates()
+    var locks = lock_files()
+    var found = List[Bool](length=len(locks), fill=False)
     for p in paths:
         var base = _base(p)
         var low = base.lower()
         var root = base == p
-        if root and (
-            p == "magic.lock" or p == "pixi.lock" or p == "uv.lock"
-            or p == "poetry.lock" or p == "pdm.lock"
-        ):
-            c.lock.append(p)
+        var lock = -1
+        if root:
+            for i in range(len(locks)):
+                if p == locks[i]:
+                    lock = i
+        if lock >= 0:
+            found[lock] = True
         elif root and (
             p == "pixi.toml" or p == "mojoproject.toml" or p == "pyproject.toml"
             or p == "requirements.txt" or p == "requirements-dev.txt"
@@ -150,6 +155,11 @@ def classify(paths: List[String]) -> Candidates:
             c.docker.append(p)
         elif root and low.startswith("readme"):
             c.readme.append(p)
+    # The lock files in `lock_files` order, not the tree's (alphabetical):
+    # `pixi.lock` is read before a `magic.lock` left beside it.
+    for i in range(len(locks)):
+        if found[i]:
+            c.lock.append(locks[i])
     _trim(c.ci)
     _trim(c.docker)
     _trim(c.readme)

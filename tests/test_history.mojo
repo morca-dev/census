@@ -294,6 +294,67 @@ def test_python_tooling_history() raises:
     assert_true("mojo_version:1.2.0>1.2.1" in kinds)
 
 
+def _conda_lock(file: String, pkg: String, version: String) -> String:
+    """A shell step writing a conda lock `file` that installs `pkg`."""
+    return String(
+        "printf 'packages:\\n- conda: https://conda.modular.com/max/linux-64/",
+        pkg, "-", version, "-release.conda\\n' > ", file,
+    )
+
+
+def test_pixi_lock_over_a_magic_lock_left_behind() raises:
+    # ExtraMojo's shape: built with magic (magic.lock and mojoproject.toml),
+    # then moved to pixi (pixi.toml and pixi.lock) with the last magic.lock
+    # left in the tree. The pixi files are the current ones.
+    var dir = String(getenv("TMPDIR", "/tmp"), "/mojo-census-test-magic-left")
+    var steps: List[String] = [
+        String(
+            _conda_lock("magic.lock", "max-core", "25.5.0.dev2025061605"),
+            " && printf '[dependencies]\\nmax = \"*\"\\n' > mojoproject.toml",
+        ),
+        String(
+            "rm mojoproject.toml && ",
+            _conda_lock("pixi.lock", "mojo-compiler", "1.2.0"),
+            " && printf '[dependencies]\\nmojo = \"=1.2.0\"\\n' > pixi.toml",
+        ),
+        # An edit to the leftover magic.lock doesn't bring it back.
+        String("echo '# kept' >> magic.lock"),
+    ]
+    var h = _git_history(dir, steps)
+    assert_equal(len(h.commits), 3)
+    assert_equal(h.commits.items[0].tooling, "magic")
+    assert_equal(h.commits.items[0].mojo_version, "25.5.0.dev2025061605")
+    assert_equal(h.commits.items[0].version_source, "magic.lock")
+    assert_equal(h.commits.items[1].tooling, "pixi")
+    assert_equal(h.commits.items[1].mojo_version, "1.2.0")
+    assert_equal(h.commits.items[1].version_source, "pixi.lock")
+    assert_equal(h.commits.items[2].tooling, "pixi")
+    assert_equal(h.commits.items[2].mojo_version, "1.2.0")
+    assert_equal(h.commits.items[2].version_source, "pixi.lock")
+    var kinds = List[String]()
+    for ref m in h.migrations.items:
+        kinds.append(String(m.kind, ":", m.from_value, ">", m.to_value))
+    assert_true("mojo_version:25.5.0.dev2025061605>1.2.0" in kinds)
+    assert_true("tooling:magic>pixi" in kinds)
+
+
+def test_magic_only_keeps_its_lock() raises:
+    # A magic project: magic.lock with a pixi.toml (magic read it too) and no
+    # pixi.lock. The lock decides over the manifest's range, as before.
+    var dir = String(getenv("TMPDIR", "/tmp"), "/mojo-census-test-magic-only")
+    var steps: List[String] = [
+        String(
+            _conda_lock("magic.lock", "max-core", "25.3.0.dev2025032620"),
+            " && printf '[dependencies]\\nmax = \">=24.5\"\\n' > pixi.toml",
+        ),
+    ]
+    var h = _git_history(dir, steps)
+    assert_equal(len(h.commits), 1)
+    assert_equal(h.commits.items[0].tooling, "magic")
+    assert_equal(h.commits.items[0].mojo_version, "25.3.0.dev2025032620")
+    assert_equal(h.commits.items[0].version_source, "magic.lock")
+
+
 def test_pixi_in_pyproject_stays_pixi() raises:
     # pixi reads its manifest from `[tool.pixi.*]`: that is pixi, not pip,
     # with or without a uv.lock beside it.

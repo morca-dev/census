@@ -227,6 +227,18 @@ def test_classify_files() raises:
     assert_equal(cu.lock[0], "uv.lock")
     assert_equal(len(cu.manifest), 1)
     assert_equal(len(cu.deps), 2)
+    # ExtraMojo: a magic.lock left from before pixi sorts first in the tree,
+    # but pixi.lock is read first; magic.lock alone is still a lock.
+    var moved: List[String] = ["magic.lock", "pdm.lock", "pixi.lock", "pixi.toml"]
+    var cm = classify(moved)
+    assert_equal(len(cm.lock), 3)
+    assert_equal(cm.lock[0], "pixi.lock")
+    assert_equal(cm.lock[1], "magic.lock")
+    assert_equal(cm.lock[2], "pdm.lock")
+    var magic: List[String] = ["magic.lock", "mojoproject.toml"]
+    var cg = classify(magic)
+    assert_equal(len(cg.lock), 1)
+    assert_equal(cg.lock[0], "magic.lock")
 
 
 def main() raises:
