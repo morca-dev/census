@@ -17,7 +17,9 @@
 #
 # The warehouse is empty, so a keyed pipeline's `<binary> keys` (which reads
 # mojo.repos) can't answer: its binary is replaced, in the state only, by a
-# wrapper that prints two repos for `keys` and runs the real one otherwise.
+# wrapper that prints two repos for `keys`, and the repos any step names for
+# that pipeline (a step over a few named repositories, #259), and runs the
+# real one otherwise.
 #
 # --dry-run applies morca's pending schema migrations, so this runs only
 # against the throwaway server with-postgres.sh starts. Needs `pixi run
@@ -62,7 +64,9 @@ newest=$(sed -n 's/^version = "\(.*\)"$/\1/p' upgrade.toml | head -n 1)
 ./build/morca upgrade --file upgrade.toml --from 0.0.0 --to "$newest" > "$work/steps"
 grep -q . "$work/steps" || { echo "no steps in upgrade.toml up to $newest" >&2; exit 1; }
 
-# A keyed pipeline's wrapper: two keys for `keys`, the real binary otherwise.
+# A keyed pipeline's wrapper: for `keys`, two keys and the ones the steps
+# name for it (its lines of the seeds file, read when it runs, so the steps
+# after the one that wrote it count too); the real binary otherwise.
 keyed() {
     real=$(q "SELECT binary_path FROM orca.pipelines WHERE name = '$1'")
     wrapper=$work/keyed-$1
@@ -70,6 +74,8 @@ keyed() {
 #!/bin/sh
 if [ "\$#" = 1 ] && [ "\$1" = keys ]; then
     printf '1\nmodular/modular\nmodular/mojo-gpu-puzzles\n'
+    grep '^$1 ' "$work/seeds" | cut -d' ' -f2 | grep . \
+        | grep -vx 'modular/modular' | grep -vx 'modular/mojo-gpu-puzzles' | sort -u
     exit 0
 fi
 exec "$real" "\$@"
