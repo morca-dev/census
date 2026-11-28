@@ -3,6 +3,18 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.28.0 - 2026-11-28
+
+- **pixi.lock wins over a leftover magic.lock:** a repository that moved from magic to pixi and kept its old `magic.lock` (ExtraMojo/ExtraMojo, shown at 25.5.0 nightly though it builds with 1.2.0) now gets its Mojo version and tooling from `pixi.lock`, at its head and in its history; a `magic.lock` still counts when there is no `pixi.lock`. Deploying reads the 11 repositories with both lock files again (the after step). (#259)
+
+- **Used by no longer credits PyPI or conda-forge packages to Mojo repos of the same name:** a dependency matches a census repo by name only when it is a conda package conda-forge doesn't have (mojo_stats asks anaconda.org, into the new mojo.dep_names) or a PyPI package the repo publishes from its pyproject, a git dependency only by its repository (`git = "owner/name"` read too), and Modular's own packages never; after deploying, a mojo_versions run over 8 of Mosaad-M's repos (a step shown on deploy) reads their git shorthand again. (#260)
+
+**After deploying** (deploy.sh shows these and runs the commands):
+
+- Run `morca backfill --rerun mojo_retool alisterburt/mojo-cryoem-projection,carlca/ca_web,dorjeduck/mojo-dictionary-benchmarks,dotnethero/Philox,ExtraMojo/ExtraMojo,fourlexboehm/mojo-lambda-runtime,GrCOTE7/Mojo,IbarraSamuel/termo,marcelroed/monolithic-sup,mzaks/mojo-unicode,pbanavara/mojo_fast_nms`.
+- Run `morca backfill --rerun mojo_versions alisterburt/mojo-cryoem-projection,carlca/ca_web,dorjeduck/mojo-dictionary-benchmarks,dotnethero/Philox,ExtraMojo/ExtraMojo,fourlexboehm/mojo-lambda-runtime,GrCOTE7/Mojo,IbarraSamuel/termo,marcelroed/monolithic-sup,mzaks/mojo-unicode,pbanavara/mojo_fast_nms`.
+- Run `morca backfill --rerun mojo_versions Mosaad-M/arrow,Mosaad-M/cdp,Mosaad-M/fhir-arrow,Mosaad-M/mojo-pkg,Mosaad-M/pg,Mosaad-M/requests,Mosaad-M/tls,Mosaad-M/websocket`.
+
 ## 1.27.0 - 2026-11-27
 
 - **Agents can report a missing tool:** `/mcp` lists `get_more_tools`, PostHog's tool for an agent to say what it needed and couldn't find, and sends each report to PostHog as a `$mcp_missing_capability` (its text cut to 2,048 characters), which fills MCP Analytics' "Missing capabilities" page; it reads nothing from the census, and without `POSTHOG_KEY` it answers the same and sends nothing. (#256)
