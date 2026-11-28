@@ -1,4 +1,8 @@
+# The 8 repositories whose git dependencies use GitHub's owner/name shorthand
+# (2026-11-28): read again, so their links to each other come back. A run
+# step: CI's dry run takes the repositories a step names since #259, which
+# this release needs merged with it.
 [[step]]
 id = "git-shorthand-deps"
 when = "after"
-manual = "Read again the 8 repos whose git dependencies use GitHub's owner/name shorthand, so their links to each other come back: morca backfill --rerun mojo_versions Mosaad-M/arrow,Mosaad-M/cdp,Mosaad-M/fhir-arrow,Mosaad-M/mojo-pkg,Mosaad-M/pg,Mosaad-M/requests,Mosaad-M/tls,Mosaad-M/websocket (one run; drop a repo morca says isn't a key of mojo.repos). A manual step because CI's dry run has only two keys of mojo.repos."
+run = "morca backfill --rerun mojo_versions Mosaad-M/arrow,Mosaad-M/cdp,Mosaad-M/fhir-arrow,Mosaad-M/mojo-pkg,Mosaad-M/pg,Mosaad-M/requests,Mosaad-M/tls,Mosaad-M/websocket"
