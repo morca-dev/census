@@ -129,6 +129,22 @@ def packages() -> List[String]:
     return ["mojo-compiler", "mojo", "max-core", "max", "modular"]
 
 
+def lock_files() -> List[String]:
+    """The lock files at a repository's root that can name its Mojo
+    version, in the order they are read: the conda ones (`lock_version`),
+    then the Python ones (`pylock_version`).
+
+    `pixi.lock` comes before `magic.lock`. magic was pixi under another name
+    and was retired for it in 2025, and a project that moved to pixi often
+    leaves its last `magic.lock` behind (ExtraMojo: a `magic.lock` of
+    25.5.0.dev2025061605 beside the `pixi.lock` of the Mojo 1.2.0 it builds
+    with), so `magic.lock` counts only when there is no `pixi.lock` that
+    names a version. It still comes before the manifests: magic read
+    `pixi.toml` as well as `mojoproject.toml`, so a `magic.lock` beside a
+    `pixi.toml` alone is that manifest's lock."""
+    return ["pixi.lock", "magic.lock", "uv.lock", "poetry.lock", "pdm.lock"]
+
+
 def lock_version(text: String) -> String:
     """The Mojo version a `pixi.lock` or `magic.lock` installs: from a
     conda URL `.../<package>-<version>-<build>.conda`, trying the packages
@@ -245,8 +261,9 @@ def tooling(f: ToolFiles) -> String:
     A repository built with Bazel is `bazel` even if it has other files too.
     magic read both `mojoproject.toml` and `pixi.toml` and wrote
     `magic.lock`; pixi writes `pixi.lock` and also reads a `pyproject.toml`
-    with `[tool.pixi]` tables. A lock file decides; without one the manifest
-    does.
+    with `[tool.pixi]` tables. A lock file decides, `pixi.lock` over a
+    `magic.lock` left from before a move to pixi (`lock_files`); without one
+    the manifest does.
 
     The Python tools come after the conda ones, and count only when a Python
     manifest depends on Mojo (`py_mojo`): many Mojo repositories have a
@@ -255,10 +272,10 @@ def tooling(f: ToolFiles) -> String:
     `[tool.*]` table, else it is `pip`: Mojo from PyPI with no lock."""
     if f.bazel:
         return "bazel"
-    if f.magic_lock:
-        return "magic"
     if f.pixi_lock:
         return "pixi"
+    if f.magic_lock:
+        return "magic"
     if f.mojoproject:
         return "magic"
     if f.pixi_toml or f.pyproject_pixi:
